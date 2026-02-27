@@ -15,6 +15,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	internalClient "github.com/o-ermakov/cnpg-pg-doorman/test/e2e/internal/client"
+
+	// Import test packages
+	_ "github.com/o-ermakov/cnpg-pg-doorman/test/e2e/internal/tests/pooler"
 )
 
 var _ = SynchronizedBeforeSuite(func(ctx SpecContext) []byte {
