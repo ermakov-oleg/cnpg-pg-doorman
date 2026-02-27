@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: pg-doorman
+    cnpg.io/pluginName: pg-doorman.cnpg.io
+  annotations:
+    cnpg.io/pluginClientSecret: pg-doorman-client-tls
+    cnpg.io/pluginServerSecret: pg-doorman-server-tls
+    cnpg.io/pluginPort: "9090"
+  name: pg-doorman
+spec:
+  ports:
+    - port: 9090
+      protocol: TCP
+      targetPort: 9090
+  selector:
+    app: pg-doorman

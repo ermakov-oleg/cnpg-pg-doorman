@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: pg-doorman
+  name: pg-doorman
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pg-doorman
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: pg-doorman
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - image: pg-doorman-plugin:latest
+          name: pg-doorman
+          args:
+            - serve
+            - --server-cert=/server/tls.crt
+            - --server-key=/server/tls.key
+            - --client-cert=/client/tls.crt
+            - --server-address=:9090
+          ports:
+            - containerPort: 9090
+              protocol: TCP
+          env:
+            - name: SIDECAR_IMAGE
+              value: pg-doorman-wrapper:latest
+          readinessProbe:
+            tcpSocket:
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - mountPath: /server
+              name: server
+            - mountPath: /client
+              name: client
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsUser: 10001
+            runAsGroup: 10001
+      volumes:
+        - name: server
+          secret:
+            secretName: pg-doorman-server-tls
+        - name: client
+          secret:
+            secretName: pg-doorman-client-tls

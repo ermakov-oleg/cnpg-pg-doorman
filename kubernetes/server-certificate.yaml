@@ -1,0 +1,18 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: pg-doorman-server
+spec:
+  secretName: pg-doorman-server-tls
+  commonName: pg-doorman
+  dnsNames:
+    - pg-doorman
+  duration: 2160h
+  renewBefore: 360h
+  isCA: false
+  usages:
+    - server auth
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
