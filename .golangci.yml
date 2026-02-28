@@ -1,0 +1,8 @@
+version: "2"
+
+linters:
+  settings:
+    staticcheck:
+      checks:
+        - "all"
+        - "-ST1001" # allow dot imports (ginkgo/gomega in e2e tests)
