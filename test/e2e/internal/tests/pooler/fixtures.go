@@ -49,61 +49,6 @@ pools:
 	}
 }
 
-// newConfigMapWithPoolMode creates a ConfigMap with a specified pool_mode.
-func newConfigMapWithPoolMode(namespace, name, poolMode string) *corev1.ConfigMap {
-	cm := newConfigMap(namespace, name)
-	cm.Data["pg_doorman.yaml"] = `
-general:
-  host: "0.0.0.0"
-  port: 6432
-  connect_timeout: "3s"
-  idle_timeout: "5m"
-  server_lifetime: "5m"
-  shutdown_timeout: "10s"
-  worker_threads: 2
-  admin_username: "admin"
-  admin_password: "admin"
-
-prometheus:
-  enabled: true
-  host: "0.0.0.0"
-  port: 9127
-
-pools:
-  app:
-    server_host: "127.0.0.1"
-    server_port: 5432
-    pool_mode: "` + poolMode + `"
-
-    auth_query:
-      query: "SELECT * FROM public.doorman_auth_query($1)"
-      user: "doorman_auth"
-      password: ""
-      database: "app"
-      pool_size: 2
-      default_pool_size: 20
-      cache_ttl: "1h"
-`
-	return cm
-}
-
-// newInvalidConfigMap creates a ConfigMap with invalid pg_doorman config (no pools).
-func newInvalidConfigMap(namespace, name string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Data: map[string]string{
-			"pg_doorman.yaml": `
-general:
-  host: "0.0.0.0"
-  port: 6432
-`,
-		},
-	}
-}
-
 func newCluster(namespace, name, configMapName string) *cnpgv1.Cluster {
 	return &cnpgv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{

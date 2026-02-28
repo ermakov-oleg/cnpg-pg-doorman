@@ -1,6 +1,6 @@
 module github.com/o-ermakov/cnpg-pg-doorman
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/cloudnative-pg/api v1.28.0
