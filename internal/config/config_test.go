@@ -178,9 +178,10 @@ func TestNewFromCluster_InvalidPort(t *testing.T) {
 
 func TestValidate_Valid(t *testing.T) {
 	cfg := &PluginConfiguration{
-		PoolerPort:  6432,
-		MetricsPort: 9127,
-		ConfigName:  "my-config",
+		PoolerPort:   6432,
+		MetricsPort:  9127,
+		ConfigName:   "my-config",
+		SidecarImage: "ghcr.io/example/pg-doorman:latest",
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("expected valid config, got error: %v", err)
@@ -197,6 +198,17 @@ func TestValidate_MissingConfigName(t *testing.T) {
 	}
 }
 
+func TestValidate_MissingSidecarImage(t *testing.T) {
+	cfg := &PluginConfiguration{
+		PoolerPort:  6432,
+		MetricsPort: 9127,
+		ConfigName:  "my-config",
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for missing sidecar image")
+	}
+}
+
 func TestValidate_InvalidPoolerPort(t *testing.T) {
 	tests := []struct {
 		name string
@@ -209,9 +221,10 @@ func TestValidate_InvalidPoolerPort(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &PluginConfiguration{
-				PoolerPort:  tt.port,
-				MetricsPort: 9127,
-				ConfigName:  "my-config",
+				PoolerPort:   tt.port,
+				MetricsPort:  9127,
+				ConfigName:   "my-config",
+				SidecarImage: "ghcr.io/example/pg-doorman:latest",
 			}
 			if err := cfg.Validate(); err == nil {
 				t.Error("expected error for invalid pooler port")
@@ -222,9 +235,10 @@ func TestValidate_InvalidPoolerPort(t *testing.T) {
 
 func TestValidate_SamePorts(t *testing.T) {
 	cfg := &PluginConfiguration{
-		PoolerPort:  6432,
-		MetricsPort: 6432,
-		ConfigName:  "my-config",
+		PoolerPort:   6432,
+		MetricsPort:  6432,
+		ConfigName:   "my-config",
+		SidecarImage: "ghcr.io/example/pg-doorman:latest",
 	}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected error for same pooler and metrics port")

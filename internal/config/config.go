@@ -71,6 +71,9 @@ func (c *PluginConfiguration) Validate() error {
 	if c.MetricsPort <= 0 || c.MetricsPort > 65535 {
 		return fmt.Errorf("%s must be between 1 and 65535, got %d", ParamMetricsPort, c.MetricsPort)
 	}
+	if c.SidecarImage == "" {
+		return fmt.Errorf("SIDECAR_IMAGE environment variable is required")
+	}
 	if c.PoolerPort == c.MetricsPort {
 		return fmt.Errorf("%s and %s must be different", ParamPoolerPort, ParamMetricsPort)
 	}

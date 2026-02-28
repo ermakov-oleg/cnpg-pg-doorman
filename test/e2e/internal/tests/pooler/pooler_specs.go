@@ -275,8 +275,8 @@ var _ = Describe("pg_doorman pooler", func() {
 		}
 		Expect(cl.Update(ctx, &pgDoorman)).To(Succeed())
 
-		By("waiting for CRD change to propagate (~15s for polling + debounce)")
-		time.Sleep(15 * time.Second)
+		By("waiting for CRD change to propagate via polling")
+		time.Sleep(10 * time.Second)
 
 		By("verifying pod was NOT restarted (same UID)")
 		var podAfter corev1.Pod
@@ -343,8 +343,8 @@ var _ = Describe("pg_doorman pooler", func() {
 		Expect(cluster.Status.ReadyInstances).To(Equal(0))
 	})
 
-	// Test 9: CRD update with different pool size (debounce test)
-	It("should debounce rapid CRD updates and apply only the final config", func(ctx SpecContext) {
+	// Test 9: CRD rapid updates
+	It("should handle rapid CRD updates and apply the final config", func(ctx SpecContext) {
 		configName := "cr-debounce"
 		clusterName := "test-debounce"
 		createClusterAndWait(ctx, cl, ns, clusterName, configName)
@@ -361,8 +361,8 @@ var _ = Describe("pg_doorman pooler", func() {
 			time.Sleep(1 * time.Second)
 		}
 
-		By("waiting for debounce + propagation")
-		time.Sleep(15 * time.Second)
+		By("waiting for polling propagation")
+		time.Sleep(10 * time.Second)
 
 		By("checking that wrapper logs show config reloaded")
 		logs := getSidecarLogs(ctx, clientset, ns.Name, podName)

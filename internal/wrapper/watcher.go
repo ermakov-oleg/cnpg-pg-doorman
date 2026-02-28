@@ -10,8 +10,6 @@ import (
 	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
 )
 
-const debounceDelay = 3 * time.Second
-
 // ConfigGenerator generates pg_doorman YAML config from a PgDoorman spec.
 type ConfigGenerator func(ctx context.Context, spec *v1alpha1.PgDoormanSpec) ([]byte, error)
 
@@ -81,30 +79,9 @@ func (w *CRDWatcher) check(ctx context.Context) {
 		return
 	}
 
-	w.logger.Info("PgDoorman CR changed, debouncing", "oldGen", w.lastGen, "newGen", gen)
+	w.logger.Info("PgDoorman CR changed", "oldGen", w.lastGen, "newGen", gen)
 
-	// Debounce: wait to make sure the resource has stabilized
-	select {
-	case <-ctx.Done():
-		return
-	case <-time.After(debounceDelay):
-	}
-
-	// Re-check generation after debounce
-	var pgDoormanAfter v1alpha1.PgDoorman
-	if err := w.client.Get(ctx, client.ObjectKey{
-		Name:      w.configName,
-		Namespace: w.namespace,
-	}, &pgDoormanAfter); err != nil {
-		w.logger.Warn("failed to re-get PgDoorman CR after debounce", "error", err)
-		return
-	}
-	if pgDoormanAfter.Generation != gen {
-		w.logger.Info("PgDoorman CR still changing, will retry on next poll")
-		return
-	}
-
-	data, err := w.generate(ctx, &pgDoormanAfter.Spec)
+	data, err := w.generate(ctx, &pgDoorman.Spec)
 	if err != nil {
 		w.logger.Error("failed to generate config", "error", err)
 		return
