@@ -32,12 +32,12 @@ prometheus:
 
 pools:
   app:
-    server_host: "localhost"
+    server_host: "127.0.0.1"
     server_port: 5432
     pool_mode: "transaction"
 
     auth_query:
-      query: "SELECT usename, passwd FROM pg_shadow WHERE usename = $1"
+      query: "SELECT * FROM public.doorman_auth_query($1)"
       user: "doorman_auth"
       password: ""
       database: "app"
@@ -71,12 +71,12 @@ prometheus:
 
 pools:
   app:
-    server_host: "localhost"
+    server_host: "127.0.0.1"
     server_port: 5432
     pool_mode: "` + poolMode + `"
 
     auth_query:
-      query: "SELECT usename, passwd FROM pg_shadow WHERE usename = $1"
+      query: "SELECT * FROM public.doorman_auth_query($1)"
       user: "doorman_auth"
       password: ""
       database: "app"
@@ -125,6 +125,7 @@ func newCluster(namespace, name, configMapName string) *cnpgv1.Cluster {
 			PostgresConfiguration: cnpgv1.PostgresConfiguration{
 				PgHBA: []string{
 					"host all doorman_auth 127.0.0.1/32 trust",
+					"host all doorman_auth ::1/128 trust",
 				},
 			},
 			Bootstrap: &cnpgv1.BootstrapConfiguration{
@@ -133,10 +134,9 @@ func newCluster(namespace, name, configMapName string) *cnpgv1.Cluster {
 					Owner:    "app",
 					PostInitSQL: []string{
 						"CREATE ROLE doorman_auth WITH LOGIN NOINHERIT",
-						`CREATE OR REPLACE FUNCTION public.doorman_auth_query(username TEXT)
-RETURNS TABLE (usename name, passwd text)
-SECURITY DEFINER SET search_path = pg_catalog
-LANGUAGE SQL AS $$ SELECT usename, passwd FROM pg_shadow WHERE usename = $1 $$`,
+					},
+					PostInitApplicationSQL: []string{
+						"CREATE OR REPLACE FUNCTION public.doorman_auth_query(username TEXT) RETURNS TABLE (usename name, passwd text) SECURITY DEFINER SET search_path = pg_catalog LANGUAGE SQL AS 'SELECT usename, passwd FROM pg_shadow WHERE usename = $1'",
 						"GRANT EXECUTE ON FUNCTION public.doorman_auth_query(TEXT) TO doorman_auth",
 					},
 				},

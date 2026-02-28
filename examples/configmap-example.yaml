@@ -28,7 +28,7 @@ data:
         pool_mode: "transaction"
 
         auth_query:
-          query: "SELECT usename, passwd FROM pg_shadow WHERE usename = $1"
+          query: "SELECT * FROM public.doorman_auth_query($1)"
           user: "doorman_auth"
           password: ""
           database: "postgres"

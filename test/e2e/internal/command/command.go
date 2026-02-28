@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"io"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -39,14 +40,19 @@ func ExecuteInContainer(
 		Stderr:    true,
 	}, scheme.ParameterCodec)
 
-	exec, err := remotecommand.NewSPDYExecutor(cfg, "POST", req.URL())
+	exec, err := remotecommand.NewWebSocketExecutor(cfg, "GET", req.URL().String())
 	if err != nil {
 		return "", "", err
 	}
 
+	var stdinReader io.Reader
+	if stdin != nil {
+		stdinReader = stdin
+	}
+
 	var stdout, stderr bytes.Buffer
 	err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
-		Stdin:  stdin,
+		Stdin:  stdinReader,
 		Stdout: &stdout,
 		Stderr: &stderr,
 	})

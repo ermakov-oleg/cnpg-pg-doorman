@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	pgDoormanBinary   = "/usr/local/bin/pg_doorman"
+	pgDoormanBinary   = "/usr/bin/pg_doorman"
 	initialBackoff    = 1 * time.Second
 	maxBackoff        = 30 * time.Second
 	backoffMultiplier = 2

@@ -11,3 +11,11 @@ images:
   - name: pg-doorman-plugin
     newName: pg-doorman-plugin
     newTag: testing
+patches:
+  - target:
+      kind: Deployment
+      name: pg-doorman
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: pg-doorman-wrapper:testing

@@ -8,12 +8,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /doorman-wrapper ./cmd/wrapper/
 
-# Get pg_doorman binary from official image
-FROM ghcr.io/ozontech/pg_doorman:latest AS doorman
-
-# Final image
-FROM gcr.io/distroless/static:nonroot
+# Final image: pg_doorman base + our wrapper
+FROM ghcr.io/ozontech/pg_doorman:latest
 COPY --from=go-builder /doorman-wrapper /usr/local/bin/doorman-wrapper
-COPY --from=doorman /usr/bin/pg_doorman /usr/local/bin/pg_doorman
-USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/doorman-wrapper"]

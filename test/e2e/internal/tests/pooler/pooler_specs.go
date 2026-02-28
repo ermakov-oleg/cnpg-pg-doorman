@@ -44,12 +44,21 @@ func createClusterAndWait(
 	}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 }
 
+// getAppPassword reads the app user password from the CNPG-managed secret.
+func getAppPassword(ctx SpecContext, cl client.Client, ns, clusterName string) string {
+	var secret corev1.Secret
+	Expect(cl.Get(ctx, types.NamespacedName{
+		Name: clusterName + "-app", Namespace: ns,
+	}, &secret)).To(Succeed())
+	return string(secret.Data["password"])
+}
+
 // psqlViaPooler executes a psql command through the pooler port inside the postgres container.
 func psqlViaPooler(
 	ctx SpecContext,
 	clientset *kubernetes.Clientset,
 	restConfig *rest.Config,
-	ns, podName, user, db, query string,
+	ns, podName, password, user, db, query string,
 ) (string, string, error) {
 	return command.ExecuteInContainer(ctx, clientset, restConfig,
 		command.ContainerLocator{
@@ -58,7 +67,7 @@ func psqlViaPooler(
 			ContainerName: "postgres",
 		},
 		nil,
-		[]string{"psql", "-h", "localhost", "-p", "6432", "-U", user, "-d", db, "-tAc", query},
+		[]string{"sh", "-c", fmt.Sprintf("PGPASSWORD=%s PGCONNECT_TIMEOUT=5 psql -h 127.0.0.1 -p 6432 -U %s -d %s -tAc '%s'", password, user, db, query)},
 	)
 }
 
@@ -157,34 +166,37 @@ var _ = Describe("pg_doorman pooler", func() {
 	It("should accept connections via pooler port", func(ctx SpecContext) {
 		createClusterAndWait(ctx, cl, ns, "test-conn", "cm-conn")
 		podName := getPodName(ctx, cl, ns.Name, "test-conn")
+		password := getAppPassword(ctx, cl, ns.Name, "test-conn")
 
 		By("executing SELECT 1 via pooler port")
-		stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, "app", "app", "SELECT 1")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(stdout).To(ContainSubstring("1"))
+		Eventually(func(g Gomega) {
+			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(stdout).To(ContainSubstring("1"))
+		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 	})
 
 	// Test 3: Auth query works
 	It("should authenticate users via auth_query", func(ctx SpecContext) {
 		createClusterAndWait(ctx, cl, ns, "test-auth", "cm-auth")
 		podName := getPodName(ctx, cl, ns.Name, "test-auth")
+		password := getAppPassword(ctx, cl, ns.Name, "test-auth")
 
 		By("connecting as 'app' user through pooler and running query")
-		stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, "app", "app", "SELECT current_user")
+		stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT current_user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stdout).To(ContainSubstring("app"))
 
 		By("verifying that each user sees their own data")
-		// Create a table, insert data as app, verify it's accessible
-		_, _, err = psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, "app", "app",
+		_, _, err = psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app",
 			"CREATE TABLE IF NOT EXISTS test_auth (id serial, owner text DEFAULT current_user)")
 		Expect(err).NotTo(HaveOccurred())
 
-		_, _, err = psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, "app", "app",
+		_, _, err = psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app",
 			"INSERT INTO test_auth DEFAULT VALUES")
 		Expect(err).NotTo(HaveOccurred())
 
-		stdout, _, err = psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, "app", "app",
+		stdout, _, err = psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app",
 			"SELECT owner FROM test_auth LIMIT 1")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stdout).To(ContainSubstring("app"))
@@ -194,11 +206,12 @@ var _ = Describe("pg_doorman pooler", func() {
 	It("should reuse connections in transaction pool mode", func(ctx SpecContext) {
 		createClusterAndWait(ctx, cl, ns, "test-txn", "cm-txn")
 		podName := getPodName(ctx, cl, ns.Name, "test-txn")
+		password := getAppPassword(ctx, cl, ns.Name, "test-txn")
 
 		By("running multiple queries and verifying connection reuse via pg_backend_pid")
 		pids := make(map[string]bool)
 		for range 5 {
-			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, "app", "app",
+			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app",
 				"SELECT pg_backend_pid()")
 			Expect(err).NotTo(HaveOccurred())
 			pid := strings.TrimSpace(stdout)
@@ -216,7 +229,7 @@ var _ = Describe("pg_doorman pooler", func() {
 		createClusterAndWait(ctx, cl, ns, "test-metrics", "cm-metrics")
 		podName := getPodName(ctx, cl, ns.Name, "test-metrics")
 
-		By("curling the metrics endpoint from within the pod")
+		By("fetching the metrics endpoint from within the pod")
 		stdout, _, err := command.ExecuteInContainer(ctx, clientset, restConfig,
 			command.ContainerLocator{
 				NamespaceName: ns.Name,
@@ -224,7 +237,7 @@ var _ = Describe("pg_doorman pooler", func() {
 				ContainerName: "postgres",
 			},
 			nil,
-			[]string{"sh", "-c", "wget -qO- http://localhost:9127/metrics 2>/dev/null || curl -sf http://localhost:9127/metrics"},
+			[]string{"bash", "-c", `exec 3<>/dev/tcp/localhost/9127; printf "GET /metrics HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3; cat <&3`},
 		)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stdout).To(ContainSubstring("pg_doorman"))
@@ -269,7 +282,8 @@ var _ = Describe("pg_doorman pooler", func() {
 		podName := getPodName(ctx, cl, ns.Name, clusterName)
 
 		By("verifying pooler works initially")
-		stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, "app", "app", "SELECT 1")
+		password := getAppPassword(ctx, cl, ns.Name, clusterName)
+		stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stdout).To(ContainSubstring("1"))
 
@@ -291,7 +305,7 @@ general:
 		Expect(logs).To(ContainSubstring("new config is invalid"))
 
 		By("verifying pooler still works with old config")
-		stdout, _, err = psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, "app", "app", "SELECT 1")
+		stdout, _, err = psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stdout).To(ContainSubstring("1"))
 	})
@@ -340,21 +354,29 @@ general:
 		c := newClusterWithMissingConfigMap(ns.Name, clusterName)
 		Expect(cl.Create(ctx, c)).To(Succeed())
 
-		By("waiting for pod to be created (it will start but sidecar may fail)")
+		By("waiting for pod to be created")
 		Eventually(func(g Gomega) {
 			var podList corev1.PodList
 			g.Expect(cl.List(ctx, &podList, client.InNamespace(ns.Name))).To(Succeed())
 			g.Expect(podList.Items).NotTo(BeEmpty())
 		}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 
-		// The pod should exist but the pg-doorman sidecar should be waiting for config
 		podName := getPodName(ctx, cl, ns.Name, clusterName)
-		By(fmt.Sprintf("checking pod %s exists with sidecar in pending state", podName))
 
-		// Eventually the sidecar logs should show it's waiting
+		By("verifying ConfigMap volume is marked as Optional")
+		var pod corev1.Pod
+		Expect(cl.Get(ctx, types.NamespacedName{Name: podName, Namespace: ns.Name}, &pod)).To(Succeed())
+		for _, v := range pod.Spec.Volumes {
+			if v.Name == "pg-doorman-config" && v.ConfigMap != nil {
+				Expect(v.ConfigMap.Optional).NotTo(BeNil())
+				Expect(*v.ConfigMap.Optional).To(BeTrue())
+			}
+		}
+
+		By("waiting for sidecar to log that it's waiting for config")
 		Eventually(func() string {
 			return getSidecarLogs(ctx, clientset, ns.Name, podName)
-		}).WithTimeout(2*time.Minute).WithPolling(10*time.Second).Should(
+		}).WithTimeout(3*time.Minute).WithPolling(10*time.Second).Should(
 			ContainSubstring("waiting for valid config"),
 		)
 	})
@@ -388,7 +410,8 @@ general:
 		Expect(logs).To(ContainSubstring("config reloaded successfully"))
 
 		By("verifying pooler still works after rapid updates")
-		stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, "app", "app", "SELECT 1")
+		password := getAppPassword(ctx, cl, ns.Name, clusterName)
+		stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stdout).To(ContainSubstring("1"))
 	})
@@ -399,6 +422,7 @@ general:
 		podName := getPodName(ctx, cl, ns.Name, "test-crash")
 
 		By("killing pg_doorman process inside sidecar")
+		// Find pg_doorman PID via /proc and kill it. The sidecar image may not have pgrep/pidof.
 		_, _, err := command.ExecuteInContainer(ctx, clientset, restConfig,
 			command.ContainerLocator{
 				NamespaceName: ns.Name,
@@ -406,11 +430,9 @@ general:
 				ContainerName: "pg-doorman",
 			},
 			nil,
-			[]string{"sh", "-c", "kill $(pgrep pg_doorman) 2>/dev/null || true"},
+			[]string{"sh", "-c", `for p in /proc/[0-9]*/exe; do t=$(readlink "$p" 2>/dev/null); if [ "$t" = "/usr/bin/pg_doorman" ]; then kill "$(echo "$p" | cut -d/ -f3)" 2>/dev/null; fi; done`},
 		)
-		// kill may fail if the sidecar uses distroless (no shell). In that case,
-		// we verify the restart behavior through logs.
-		_ = err
+		Expect(err).NotTo(HaveOccurred())
 
 		By("waiting for wrapper to restart pg_doorman")
 		Eventually(func() string {
@@ -420,8 +442,9 @@ general:
 		)
 
 		By("verifying pooler recovers and accepts connections")
+		password := getAppPassword(ctx, cl, ns.Name, "test-crash")
 		Eventually(func(g Gomega) {
-			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, "app", "app", "SELECT 1")
+			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(stdout).To(ContainSubstring("1"))
 		}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())

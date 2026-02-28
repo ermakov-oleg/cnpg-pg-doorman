@@ -55,6 +55,7 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration) {
 					LocalObjectReference: corev1.LocalObjectReference{
 						Name: cfg.ConfigMapName,
 					},
+					Optional: ptr.To(true),
 				},
 			},
 		})
