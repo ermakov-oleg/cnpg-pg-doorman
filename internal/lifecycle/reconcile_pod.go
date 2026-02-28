@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/cloudnative-pg/cnpg-i/pkg/lifecycle"
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/decoder"
@@ -17,8 +18,6 @@ import (
 
 const (
 	sidecarContainerName = "pg-doorman"
-	configVolumeName     = "pg-doorman-config"
-	configMountPath      = "/etc/pg_doorman/configmap"
 	scratchVolumeName    = "pg-doorman-scratch"
 	scratchMountPath     = "/tmp"
 )
@@ -26,6 +25,7 @@ const (
 func reconcilePod(
 	request *lifecycle.OperatorLifecycleRequest,
 	cfg *config.PluginConfiguration,
+	clusterName, clusterNamespace string,
 ) (*lifecycle.OperatorLifecycleResponse, error) {
 	pod, err := decoder.DecodePodJSON(request.GetObjectDefinition())
 	if err != nil {
@@ -33,7 +33,7 @@ func reconcilePod(
 	}
 
 	mutatedPod := pod.DeepCopy()
-	injectSidecar(&mutatedPod.Spec, cfg)
+	injectSidecar(&mutatedPod.Spec, cfg, clusterName, clusterNamespace)
 
 	patch, err := object.CreatePatch(mutatedPod, pod)
 	if err != nil {
@@ -45,22 +45,7 @@ func reconcilePod(
 	}, nil
 }
 
-func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration) {
-	// Add ConfigMap volume
-	if !hasVolume(spec.Volumes, configVolumeName) {
-		spec.Volumes = append(spec.Volumes, corev1.Volume{
-			Name: configVolumeName,
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: cfg.ConfigMapName,
-					},
-					Optional: ptr.To(true),
-				},
-			},
-		})
-	}
-
+func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, clusterName, clusterNamespace string) {
 	// Add emptyDir scratch volume for /tmp
 	if !hasVolume(spec.Volumes, scratchVolumeName) {
 		spec.Volumes = append(spec.Volumes, corev1.Volume{
@@ -87,12 +72,13 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration) {
 				Protocol:      corev1.ProtocolTCP,
 			},
 		},
+		Env: []corev1.EnvVar{
+			{Name: "PG_DOORMAN_CONFIG_NAME", Value: cfg.ConfigName},
+			{Name: "PG_DOORMAN_CONFIG_NAMESPACE", Value: clusterNamespace},
+			{Name: "POOLER_PORT", Value: strconv.Itoa(cfg.PoolerPort)},
+			{Name: "METRICS_PORT", Value: strconv.Itoa(cfg.MetricsPort)},
+		},
 		VolumeMounts: []corev1.VolumeMount{
-			{
-				Name:      configVolumeName,
-				MountPath: configMountPath,
-				ReadOnly:  true,
-			},
 			{
 				Name:      scratchVolumeName,
 				MountPath: scratchMountPath,

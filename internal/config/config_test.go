@@ -16,7 +16,7 @@ func TestNewFromCluster_Defaults(t *testing.T) {
 				{
 					Name: "pg-doorman.cnpg.io",
 					Parameters: map[string]string{
-						"configMapName": "my-config",
+						"configName": "my-config",
 					},
 				},
 			},
@@ -30,8 +30,8 @@ func TestNewFromCluster_Defaults(t *testing.T) {
 	if cfg.MetricsPort != DefaultMetricsPort {
 		t.Errorf("expected default metrics port %d, got %d", DefaultMetricsPort, cfg.MetricsPort)
 	}
-	if cfg.ConfigMapName != "my-config" {
-		t.Errorf("expected configMapName 'my-config', got %q", cfg.ConfigMapName)
+	if cfg.ConfigName != "my-config" {
+		t.Errorf("expected configName 'my-config', got %q", cfg.ConfigName)
 	}
 }
 
@@ -43,9 +43,9 @@ func TestNewFromCluster_CustomPorts(t *testing.T) {
 				{
 					Name: "pg-doorman.cnpg.io",
 					Parameters: map[string]string{
-						"configMapName": "my-config",
-						"poolerPort":    "7432",
-						"metricsPort":   "9200",
+						"configName":  "my-config",
+						"poolerPort":  "7432",
+						"metricsPort": "9200",
 					},
 				},
 			},
@@ -70,8 +70,8 @@ func TestNewFromCluster_DisabledPlugin(t *testing.T) {
 					Name:    "pg-doorman.cnpg.io",
 					Enabled: ptr.To(false),
 					Parameters: map[string]string{
-						"configMapName": "my-config",
-						"poolerPort":    "7432",
+						"configName": "my-config",
+						"poolerPort": "7432",
 					},
 				},
 			},
@@ -83,8 +83,8 @@ func TestNewFromCluster_DisabledPlugin(t *testing.T) {
 	if cfg.PoolerPort != DefaultPoolerPort {
 		t.Errorf("expected default pooler port for disabled plugin, got %d", cfg.PoolerPort)
 	}
-	if cfg.ConfigMapName != "" {
-		t.Errorf("expected empty configMapName for disabled plugin, got %q", cfg.ConfigMapName)
+	if cfg.ConfigName != "" {
+		t.Errorf("expected empty configName for disabled plugin, got %q", cfg.ConfigName)
 	}
 }
 
@@ -97,7 +97,7 @@ func TestNewFromCluster_EnabledNilMeansEnabled(t *testing.T) {
 					Name: "pg-doorman.cnpg.io",
 					// Enabled is nil = true by default
 					Parameters: map[string]string{
-						"configMapName": "my-config",
+						"configName": "my-config",
 					},
 				},
 			},
@@ -105,8 +105,8 @@ func TestNewFromCluster_EnabledNilMeansEnabled(t *testing.T) {
 	}
 
 	cfg := NewFromCluster(cluster)
-	if cfg.ConfigMapName != "my-config" {
-		t.Errorf("expected configMapName 'my-config' for nil-enabled plugin, got %q", cfg.ConfigMapName)
+	if cfg.ConfigName != "my-config" {
+		t.Errorf("expected configName 'my-config' for nil-enabled plugin, got %q", cfg.ConfigName)
 	}
 }
 
@@ -119,7 +119,7 @@ func TestNewFromCluster_ExplicitlyEnabled(t *testing.T) {
 					Name:    "pg-doorman.cnpg.io",
 					Enabled: ptr.To(true),
 					Parameters: map[string]string{
-						"configMapName": "my-config",
+						"configName": "my-config",
 					},
 				},
 			},
@@ -127,8 +127,8 @@ func TestNewFromCluster_ExplicitlyEnabled(t *testing.T) {
 	}
 
 	cfg := NewFromCluster(cluster)
-	if cfg.ConfigMapName != "my-config" {
-		t.Errorf("expected configMapName for explicitly enabled plugin, got %q", cfg.ConfigMapName)
+	if cfg.ConfigName != "my-config" {
+		t.Errorf("expected configName for explicitly enabled plugin, got %q", cfg.ConfigName)
 	}
 }
 
@@ -140,7 +140,7 @@ func TestNewFromCluster_WrongPlugin(t *testing.T) {
 				{
 					Name: "other-plugin.cnpg.io",
 					Parameters: map[string]string{
-						"configMapName": "other-config",
+						"configName": "other-config",
 					},
 				},
 			},
@@ -148,8 +148,8 @@ func TestNewFromCluster_WrongPlugin(t *testing.T) {
 	}
 
 	cfg := NewFromCluster(cluster)
-	if cfg.ConfigMapName != "" {
-		t.Errorf("expected empty configMapName for wrong plugin, got %q", cfg.ConfigMapName)
+	if cfg.ConfigName != "" {
+		t.Errorf("expected empty configName for wrong plugin, got %q", cfg.ConfigName)
 	}
 }
 
@@ -161,8 +161,8 @@ func TestNewFromCluster_InvalidPort(t *testing.T) {
 				{
 					Name: "pg-doorman.cnpg.io",
 					Parameters: map[string]string{
-						"configMapName": "my-config",
-						"poolerPort":    "not-a-number",
+						"configName": "my-config",
+						"poolerPort": "not-a-number",
 					},
 				},
 			},
@@ -178,22 +178,22 @@ func TestNewFromCluster_InvalidPort(t *testing.T) {
 
 func TestValidate_Valid(t *testing.T) {
 	cfg := &PluginConfiguration{
-		PoolerPort:    6432,
-		MetricsPort:   9127,
-		ConfigMapName: "my-config",
+		PoolerPort:  6432,
+		MetricsPort: 9127,
+		ConfigName:  "my-config",
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("expected valid config, got error: %v", err)
 	}
 }
 
-func TestValidate_MissingConfigMapName(t *testing.T) {
+func TestValidate_MissingConfigName(t *testing.T) {
 	cfg := &PluginConfiguration{
 		PoolerPort:  6432,
 		MetricsPort: 9127,
 	}
 	if err := cfg.Validate(); err == nil {
-		t.Fatal("expected error for missing configMapName")
+		t.Fatal("expected error for missing configName")
 	}
 }
 
@@ -209,9 +209,9 @@ func TestValidate_InvalidPoolerPort(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &PluginConfiguration{
-				PoolerPort:    tt.port,
-				MetricsPort:   9127,
-				ConfigMapName: "my-config",
+				PoolerPort:  tt.port,
+				MetricsPort: 9127,
+				ConfigName:  "my-config",
 			}
 			if err := cfg.Validate(); err == nil {
 				t.Error("expected error for invalid pooler port")
@@ -222,9 +222,9 @@ func TestValidate_InvalidPoolerPort(t *testing.T) {
 
 func TestValidate_SamePorts(t *testing.T) {
 	cfg := &PluginConfiguration{
-		PoolerPort:    6432,
-		MetricsPort:   6432,
-		ConfigMapName: "my-config",
+		PoolerPort:  6432,
+		MetricsPort: 6432,
+		ConfigName:  "my-config",
 	}
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected error for same pooler and metrics port")
@@ -243,8 +243,8 @@ func TestSetDefaults(t *testing.T) {
 
 func TestSetDefaults_PreservesExisting(t *testing.T) {
 	params := map[string]string{
-		"poolerPort":    "7432",
-		"configMapName": "my-config",
+		"poolerPort": "7432",
+		"configName": "my-config",
 	}
 	result := SetDefaults(params)
 	if result["poolerPort"] != "7432" {
@@ -253,7 +253,7 @@ func TestSetDefaults_PreservesExisting(t *testing.T) {
 	if result["metricsPort"] != "9127" {
 		t.Errorf("expected default metricsPort, got %q", result["metricsPort"])
 	}
-	if result["configMapName"] != "my-config" {
-		t.Errorf("expected preserved configMapName, got %q", result["configMapName"])
+	if result["configName"] != "my-config" {
+		t.Errorf("expected preserved configName, got %q", result["configName"])
 	}
 }

@@ -254,8 +254,8 @@ func TestAtomicWrite(t *testing.T) {
 	path := filepath.Join(dir, "out.yaml")
 
 	data := []byte("test data for atomic write")
-	if err := atomicWrite(path, data); err != nil {
-		t.Fatalf("atomicWrite failed: %v", err)
+	if err := AtomicWrite(path, data); err != nil {
+		t.Fatalf("AtomicWrite failed: %v", err)
 	}
 
 	got, err := os.ReadFile(path)

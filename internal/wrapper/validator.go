@@ -18,12 +18,16 @@ type DoormanConfig struct {
 }
 
 type GeneralConfig struct {
-	Host           string `yaml:"host"`
-	Port           int    `yaml:"port"`
-	AdminUsername  string `yaml:"admin_username"`
-	AdminPassword  string `yaml:"admin_password"`
-	WorkerThreads  int    `yaml:"worker_threads"`
-	MaxConnections int    `yaml:"max_connections"`
+	Host            string `yaml:"host"`
+	Port            int    `yaml:"port"`
+	AdminUsername   string `yaml:"admin_username"`
+	AdminPassword   string `yaml:"admin_password"`
+	WorkerThreads   int    `yaml:"worker_threads"`
+	MaxConnections  int    `yaml:"max_connections"`
+	ConnectTimeout  string `yaml:"connect_timeout,omitempty"`
+	IdleTimeout     string `yaml:"idle_timeout,omitempty"`
+	ServerLifetime  string `yaml:"server_lifetime,omitempty"`
+	ShutdownTimeout string `yaml:"shutdown_timeout,omitempty"`
 }
 
 type PoolConfig struct {
@@ -47,6 +51,9 @@ type AuthQueryConfig struct {
 	Database        string `yaml:"database"`
 	PoolSize        int    `yaml:"pool_size"`
 	DefaultPoolSize int    `yaml:"default_pool_size"`
+	CacheTTL        string `yaml:"cache_ttl,omitempty"`
+	CacheFailureTTL string `yaml:"cache_failure_ttl,omitempty"`
+	MinInterval     string `yaml:"min_interval,omitempty"`
 }
 
 type PrometheusConfig struct {
@@ -109,7 +116,7 @@ func ValidateAndCopyConfig(src, dst string, logger *slog.Logger) error {
 		return err
 	}
 
-	if err := atomicWrite(dst, data); err != nil {
+	if err := AtomicWrite(dst, data); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
@@ -117,8 +124,8 @@ func ValidateAndCopyConfig(src, dst string, logger *slog.Logger) error {
 	return nil
 }
 
-// atomicWrite записывает данные через temp file + fsync + rename.
-func atomicWrite(path string, data []byte) error {
+// AtomicWrite записывает данные через temp file + fsync + rename.
+func AtomicWrite(path string, data []byte) error {
 	tmp := path + ".tmp"
 	f, err := os.Create(tmp)
 	if err != nil {

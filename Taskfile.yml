@@ -9,6 +9,12 @@ vars:
   CNPG_VERSION: "1.28.0"
 
 tasks:
+  generate:
+    desc: Generate deepcopy and CRD manifests
+    cmds:
+      - controller-gen object paths=./api/...
+      - controller-gen crd paths=./api/... output:crd:dir=kubernetes/crd
+
   build:
     desc: Build all Go binaries
     cmds:
@@ -95,8 +101,9 @@ tasks:
       - install-cnpg
     cmds:
       - kubectl apply -k kubernetes/
+      - kubectl rollout restart deployment/pg-doorman -n cnpg-system
       - >
-        kubectl wait --for=condition=Available deployment/pg-doorman
+        kubectl rollout status deployment/pg-doorman
         -n cnpg-system --timeout=120s
 
   e2e:

@@ -13,26 +13,28 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	pgdoormanv1alpha1 "github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
 	internalClient "github.com/o-ermakov/cnpg-pg-doorman/test/e2e/internal/client"
 	"github.com/o-ermakov/cnpg-pg-doorman/test/e2e/internal/cluster"
 	"github.com/o-ermakov/cnpg-pg-doorman/test/e2e/internal/command"
 	"github.com/o-ermakov/cnpg-pg-doorman/test/e2e/internal/namespace"
 )
 
-// createClusterAndWait creates a ConfigMap + Cluster and waits for readiness.
+// createClusterAndWait creates a PgDoorman CR + Cluster and waits for readiness.
 func createClusterAndWait(
 	ctx SpecContext,
 	cl client.Client,
 	ns *corev1.Namespace,
-	clusterName, configMapName string,
+	clusterName, configName string,
 ) {
-	By("creating ConfigMap")
-	Expect(cl.Create(ctx, newConfigMap(ns.Name, configMapName))).To(Succeed())
+	By("creating PgDoorman CR")
+	Expect(cl.Create(ctx, newPgDoorman(ns.Name, configName))).To(Succeed())
 
 	By("creating Cluster")
-	Expect(cl.Create(ctx, newCluster(ns.Name, clusterName, configMapName))).To(Succeed())
+	Expect(cl.Create(ctx, newCluster(ns.Name, clusterName, configName))).To(Succeed())
 
 	By("waiting for cluster to be ready")
 	Eventually(func(g Gomega) {
@@ -123,7 +125,7 @@ var _ = Describe("pg_doorman pooler", func() {
 
 	// Test 1: Sidecar injection
 	It("should inject pg_doorman sidecar into pods", func(ctx SpecContext) {
-		createClusterAndWait(ctx, cl, ns, "test-inject", "cm-inject")
+		createClusterAndWait(ctx, cl, ns, "test-inject", "cr-inject")
 
 		By("checking pg_doorman sidecar exists in pod")
 		var podList corev1.PodList
@@ -139,17 +141,26 @@ var _ = Describe("pg_doorman pooler", func() {
 					Expect(*c.RestartPolicy).To(Equal(corev1.ContainerRestartPolicyAlways))
 
 					By("checking volume mounts")
-					var hasConfig, hasScratch bool
+					var hasScratch bool
 					for _, vm := range c.VolumeMounts {
-						if vm.Name == "pg-doorman-config" && vm.ReadOnly {
-							hasConfig = true
-						}
 						if vm.Name == "pg-doorman-scratch" {
 							hasScratch = true
 						}
 					}
-					Expect(hasConfig).To(BeTrue(), "config volume mount not found")
 					Expect(hasScratch).To(BeTrue(), "scratch volume mount not found")
+
+					By("checking env vars")
+					var hasConfigName, hasNamespace bool
+					for _, env := range c.Env {
+						if env.Name == "PG_DOORMAN_CONFIG_NAME" {
+							hasConfigName = true
+						}
+						if env.Name == "PG_DOORMAN_CONFIG_NAMESPACE" {
+							hasNamespace = true
+						}
+					}
+					Expect(hasConfigName).To(BeTrue(), "PG_DOORMAN_CONFIG_NAME env not found")
+					Expect(hasNamespace).To(BeTrue(), "PG_DOORMAN_CONFIG_NAMESPACE env not found")
 
 					By("checking security context")
 					Expect(c.SecurityContext).NotTo(BeNil())
@@ -164,7 +175,7 @@ var _ = Describe("pg_doorman pooler", func() {
 
 	// Test 2: Connection via pooler
 	It("should accept connections via pooler port", func(ctx SpecContext) {
-		createClusterAndWait(ctx, cl, ns, "test-conn", "cm-conn")
+		createClusterAndWait(ctx, cl, ns, "test-conn", "cr-conn")
 		podName := getPodName(ctx, cl, ns.Name, "test-conn")
 		password := getAppPassword(ctx, cl, ns.Name, "test-conn")
 
@@ -178,7 +189,7 @@ var _ = Describe("pg_doorman pooler", func() {
 
 	// Test 3: Auth query works
 	It("should authenticate users via auth_query", func(ctx SpecContext) {
-		createClusterAndWait(ctx, cl, ns, "test-auth", "cm-auth")
+		createClusterAndWait(ctx, cl, ns, "test-auth", "cr-auth")
 		podName := getPodName(ctx, cl, ns.Name, "test-auth")
 		password := getAppPassword(ctx, cl, ns.Name, "test-auth")
 
@@ -204,7 +215,7 @@ var _ = Describe("pg_doorman pooler", func() {
 
 	// Test 4: Transaction pooling
 	It("should reuse connections in transaction pool mode", func(ctx SpecContext) {
-		createClusterAndWait(ctx, cl, ns, "test-txn", "cm-txn")
+		createClusterAndWait(ctx, cl, ns, "test-txn", "cr-txn")
 		podName := getPodName(ctx, cl, ns.Name, "test-txn")
 		password := getAppPassword(ctx, cl, ns.Name, "test-txn")
 
@@ -217,16 +228,13 @@ var _ = Describe("pg_doorman pooler", func() {
 			pid := strings.TrimSpace(stdout)
 			pids[pid] = true
 		}
-		// In transaction mode, connections are reused, so we expect fewer unique PIDs than queries
-		// (though not guaranteed to be exactly 1 due to timing)
 		By(fmt.Sprintf("found %d unique backend PIDs across 5 queries", len(pids)))
-		// At minimum verify pooler is working (we got results)
 		Expect(len(pids)).To(BeNumerically(">", 0))
 	})
 
 	// Test 5: Metrics endpoint
 	It("should expose Prometheus metrics", func(ctx SpecContext) {
-		createClusterAndWait(ctx, cl, ns, "test-metrics", "cm-metrics")
+		createClusterAndWait(ctx, cl, ns, "test-metrics", "cr-metrics")
 		podName := getPodName(ctx, cl, ns.Name, "test-metrics")
 
 		By("fetching the metrics endpoint from within the pod")
@@ -243,11 +251,11 @@ var _ = Describe("pg_doorman pooler", func() {
 		Expect(stdout).To(ContainSubstring("pg_doorman"))
 	})
 
-	// Test 6: Config hot reload
-	It("should hot-reload config via SIGHUP without pod restart", func(ctx SpecContext) {
-		configMapName := "cm-reload"
+	// Test 6: Config hot reload via CRD update
+	It("should hot-reload config via SIGHUP when PgDoorman CR changes", func(ctx SpecContext) {
+		configName := "cr-reload"
 		clusterName := "test-reload"
-		createClusterAndWait(ctx, cl, ns, clusterName, configMapName)
+		createClusterAndWait(ctx, cl, ns, clusterName, configName)
 		podName := getPodName(ctx, cl, ns.Name, clusterName)
 
 		By("recording pod UID before config change")
@@ -255,14 +263,20 @@ var _ = Describe("pg_doorman pooler", func() {
 		Expect(cl.Get(ctx, types.NamespacedName{Name: podName, Namespace: ns.Name}, &podBefore)).To(Succeed())
 		uidBefore := podBefore.UID
 
-		By("updating ConfigMap pool_mode to session")
-		var cm corev1.ConfigMap
-		Expect(cl.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: ns.Name}, &cm)).To(Succeed())
-		cm.Data["pg_doorman.yaml"] = strings.ReplaceAll(cm.Data["pg_doorman.yaml"], `pool_mode: "transaction"`, `pool_mode: "session"`)
-		Expect(cl.Update(ctx, &cm)).To(Succeed())
+		By("updating PgDoorman CR pool_mode to session")
+		var pgDoorman pgdoormanv1alpha1.PgDoorman
+		Expect(cl.Get(ctx, types.NamespacedName{Name: configName, Namespace: ns.Name}, &pgDoorman)).To(Succeed())
+		pgDoorman.Spec.Pools["app"] = pgdoormanv1alpha1.PoolSpec{
+			PoolMode: "session",
+			AuthQuery: &pgdoormanv1alpha1.AuthQuerySpec{
+				User:     "doorman_auth",
+				Database: "app",
+			},
+		}
+		Expect(cl.Update(ctx, &pgDoorman)).To(Succeed())
 
-		By("waiting for config to propagate and reload (~90s for ConfigMap propagation + polling + debounce)")
-		time.Sleep(90 * time.Second)
+		By("waiting for CRD change to propagate (~15s for polling + debounce)")
+		time.Sleep(15 * time.Second)
 
 		By("verifying pod was NOT restarted (same UID)")
 		var podAfter corev1.Pod
@@ -274,47 +288,11 @@ var _ = Describe("pg_doorman pooler", func() {
 		Expect(logs).To(ContainSubstring("config reloaded successfully"))
 	})
 
-	// Test 7: Config validation — invalid config should NOT be applied
-	It("should reject invalid config and keep old config running", func(ctx SpecContext) {
-		configMapName := "cm-invalid"
-		clusterName := "test-invalid"
-		createClusterAndWait(ctx, cl, ns, clusterName, configMapName)
-		podName := getPodName(ctx, cl, ns.Name, clusterName)
-
-		By("verifying pooler works initially")
-		password := getAppPassword(ctx, cl, ns.Name, clusterName)
-		stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(stdout).To(ContainSubstring("1"))
-
-		By("updating ConfigMap with invalid config (no pools)")
-		var cm corev1.ConfigMap
-		Expect(cl.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: ns.Name}, &cm)).To(Succeed())
-		cm.Data["pg_doorman.yaml"] = `
-general:
-  host: "0.0.0.0"
-  port: 6432
-`
-		Expect(cl.Update(ctx, &cm)).To(Succeed())
-
-		By("waiting for config propagation")
-		time.Sleep(90 * time.Second)
-
-		By("checking wrapper logs for validation error")
-		logs := getSidecarLogs(ctx, clientset, ns.Name, podName)
-		Expect(logs).To(ContainSubstring("new config is invalid"))
-
-		By("verifying pooler still works with old config")
-		stdout, _, err = psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(stdout).To(ContainSubstring("1"))
-	})
-
-	// Test 8: Image update triggers rolling restart
+	// Test 7: Image update triggers rolling restart
 	It("should trigger rolling restart when sidecar image changes", func(ctx SpecContext) {
-		configMapName := "cm-image"
+		configName := "cr-image"
 		clusterName := "test-image"
-		createClusterAndWait(ctx, cl, ns, clusterName, configMapName)
+		createClusterAndWait(ctx, cl, ns, clusterName, configName)
 		podName := getPodName(ctx, cl, ns.Name, clusterName)
 
 		By("recording pod UID before image change")
@@ -322,14 +300,10 @@ general:
 		Expect(cl.Get(ctx, types.NamespacedName{Name: podName, Namespace: ns.Name}, &podBefore)).To(Succeed())
 		uidBefore := podBefore.UID
 
-		By("changing sidecar image in plugin parameters triggers cluster reconcile")
-		// Note: In practice, changing the SIDECAR_IMAGE env on the plugin Deployment
-		// would change the injected container image, causing pod spec changes -> rolling update.
-		// This test verifies the concept by directly modifying the cluster to trigger reconciliation.
+		By("changing metricsPort in plugin parameters to trigger pod spec change")
 		var currentCluster cnpgv1.Cluster
 		Expect(cl.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: ns.Name}, &currentCluster)).To(Succeed())
 
-		// Force a pod spec change by modifying metricsPort
 		for i := range currentCluster.Spec.Plugins {
 			if currentCluster.Spec.Plugins[i].Name == "pg-doorman.cnpg.io" {
 				currentCluster.Spec.Plugins[i].Parameters["metricsPort"] = "9128"
@@ -346,66 +320,51 @@ general:
 		}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 	})
 
-	// Test 9: Missing ConfigMap
-	It("should handle missing ConfigMap gracefully", func(ctx SpecContext) {
-		clusterName := "test-missing-cm"
+	// Test 8: Missing PgDoorman CR — plugin Pre() hook returns REQUEUE,
+	// which blocks cluster reconciliation until the CR is created.
+	It("should block cluster reconciliation when PgDoorman CR is missing", func(ctx SpecContext) {
+		clusterName := "test-missing-cr"
 
-		By("creating Cluster with non-existent ConfigMap (no ConfigMap created)")
-		c := newClusterWithMissingConfigMap(ns.Name, clusterName)
+		By("creating Cluster with non-existent PgDoorman CR")
+		c := newClusterWithMissingConfig(ns.Name, clusterName)
 		Expect(cl.Create(ctx, c)).To(Succeed())
 
-		By("waiting for pod to be created")
-		Eventually(func(g Gomega) {
+		By("verifying no pods are created (reconciliation blocked by plugin REQUEUE)")
+		Consistently(func(g Gomega) {
 			var podList corev1.PodList
-			g.Expect(cl.List(ctx, &podList, client.InNamespace(ns.Name))).To(Succeed())
-			g.Expect(podList.Items).NotTo(BeEmpty())
-		}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+			g.Expect(cl.List(ctx, &podList, client.InNamespace(ns.Name),
+				client.MatchingLabels{"cnpg.io/cluster": clusterName})).To(Succeed())
+			g.Expect(podList.Items).To(BeEmpty())
+		}).WithTimeout(30 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 
-		podName := getPodName(ctx, cl, ns.Name, clusterName)
-
-		By("verifying ConfigMap volume is marked as Optional")
-		var pod corev1.Pod
-		Expect(cl.Get(ctx, types.NamespacedName{Name: podName, Namespace: ns.Name}, &pod)).To(Succeed())
-		for _, v := range pod.Spec.Volumes {
-			if v.Name == "pg-doorman-config" && v.ConfigMap != nil {
-				Expect(v.ConfigMap.Optional).NotTo(BeNil())
-				Expect(*v.ConfigMap.Optional).To(BeTrue())
-			}
-		}
-
-		By("waiting for sidecar to log that it's waiting for config")
-		Eventually(func() string {
-			return getSidecarLogs(ctx, clientset, ns.Name, podName)
-		}).WithTimeout(3*time.Minute).WithPolling(10*time.Second).Should(
-			ContainSubstring("waiting for valid config"),
-		)
+		By("verifying cluster has no ready instances")
+		var cluster cnpgv1.Cluster
+		Expect(cl.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: ns.Name}, &cluster)).To(Succeed())
+		Expect(cluster.Status.ReadyInstances).To(Equal(0))
 	})
 
-	// Test 10: Rapid config updates (debounce)
-	It("should debounce rapid config updates and apply only the final config", func(ctx SpecContext) {
-		configMapName := "cm-debounce"
+	// Test 9: CRD update with different pool size (debounce test)
+	It("should debounce rapid CRD updates and apply only the final config", func(ctx SpecContext) {
+		configName := "cr-debounce"
 		clusterName := "test-debounce"
-		createClusterAndWait(ctx, cl, ns, clusterName, configMapName)
+		createClusterAndWait(ctx, cl, ns, clusterName, configName)
 		podName := getPodName(ctx, cl, ns.Name, clusterName)
 
-		By("rapidly updating ConfigMap 3 times")
-		for i, threads := range []string{"3", "4", "8"} {
-			var cm corev1.ConfigMap
-			Expect(cl.Get(ctx, types.NamespacedName{Name: configMapName, Namespace: ns.Name}, &cm)).To(Succeed())
-			// Change worker_threads each time
-			cm.Data["pg_doorman.yaml"] = strings.ReplaceAll(cm.Data["pg_doorman.yaml"], "worker_threads: 2", "worker_threads: "+threads)
-			if i > 0 {
-				prev := []string{"3", "4", "8"}
-				cm.Data["pg_doorman.yaml"] = strings.ReplaceAll(cm.Data["pg_doorman.yaml"], "worker_threads: "+prev[i-1], "worker_threads: "+threads)
+		By("rapidly updating PgDoorman CR 3 times")
+		for _, threads := range []int{3, 4, 8} {
+			var pgDoorman pgdoormanv1alpha1.PgDoorman
+			Expect(cl.Get(ctx, types.NamespacedName{Name: configName, Namespace: ns.Name}, &pgDoorman)).To(Succeed())
+			pgDoorman.Spec.General = &pgdoormanv1alpha1.GeneralSpec{
+				WorkerThreads: ptr.To(threads),
 			}
-			Expect(cl.Update(ctx, &cm)).To(Succeed())
-			time.Sleep(1 * time.Second) // rapid but not instantaneous
+			Expect(cl.Update(ctx, &pgDoorman)).To(Succeed())
+			time.Sleep(1 * time.Second)
 		}
 
 		By("waiting for debounce + propagation")
-		time.Sleep(90 * time.Second)
+		time.Sleep(15 * time.Second)
 
-		By("checking that wrapper logs show config reloaded (possibly multiple times, but should converge)")
+		By("checking that wrapper logs show config reloaded")
 		logs := getSidecarLogs(ctx, clientset, ns.Name, podName)
 		Expect(logs).To(ContainSubstring("config reloaded successfully"))
 
@@ -416,13 +375,12 @@ general:
 		Expect(stdout).To(ContainSubstring("1"))
 	})
 
-	// Test 11: Sidecar restart on crash
+	// Test 10: Sidecar restart on crash
 	It("should restart pg_doorman after crash with backoff", func(ctx SpecContext) {
-		createClusterAndWait(ctx, cl, ns, "test-crash", "cm-crash")
+		createClusterAndWait(ctx, cl, ns, "test-crash", "cr-crash")
 		podName := getPodName(ctx, cl, ns.Name, "test-crash")
 
 		By("killing pg_doorman process inside sidecar")
-		// Find pg_doorman PID via /proc and kill it. The sidecar image may not have pgrep/pidof.
 		_, _, err := command.ExecuteInContainer(ctx, clientset, restConfig,
 			command.ContainerLocator{
 				NamespaceName: ns.Name,
