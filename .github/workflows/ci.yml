@@ -68,12 +68,12 @@ jobs:
 
       - name: Install cert-manager
         run: |
-          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.2/cert-manager.yaml
           kubectl wait --for=condition=Available deployment --all -n cert-manager --timeout=120s
 
       - name: Install CNPG operator
         run: |
-          kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/main/releases/cnpg-1.26.0.yaml
+          kubectl apply --server-side -f https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.28.0/cnpg-1.28.0.yaml
           kubectl wait --for=condition=Available deployment --all -n cnpg-system --timeout=120s
 
       - name: Deploy pg-doorman plugin
@@ -86,4 +86,4 @@ jobs:
 
       - name: Run E2E tests
         run: |
-          cd test/e2e && go test -v -timeout 30m -ginkgo.v ./...
+          cd test/e2e && go test -v -timeout 30m -tags e2e -ginkgo.v ./...

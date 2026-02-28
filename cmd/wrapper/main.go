@@ -90,17 +90,22 @@ func main() {
 	// Build the config generator callback (resolves secrets + generates YAML)
 	generate := makeConfigGenerator(cl, namespace, poolerPort, metricsPort)
 
+	// Build the secret hash function for detecting secret rotation
+	secretHashFn := func(ctx context.Context, spec *v1alpha1.PgDoormanSpec, ns string) (string, error) {
+		return credentials.CollectSecretVersions(ctx, cl, spec, ns)
+	}
+
 	// Generate initial config
-	var initialGen int64
-	gen, err := generateAndWriteConfig(ctx, cl, configName, namespace, generate, logger)
+	var initialCfg wrapper.InitialConfig
+	gen, secretHash, err := generateAndWriteConfig(ctx, cl, configName, namespace, generate, secretHashFn, logger)
 	if err != nil {
 		logger.Error("initial config generation failed, waiting", "error", err)
-		initialGen = wrapper.WaitForCRDConfig(ctx, cl, configName, namespace, runtimeConfig, generate, pollIntervalSec, logger)
+		initialCfg = wrapper.WaitForCRDConfig(ctx, cl, configName, namespace, runtimeConfig, generate, secretHashFn, pollIntervalSec, logger)
 		if ctx.Err() != nil {
 			os.Exit(0)
 		}
 	} else {
-		initialGen = gen
+		initialCfg = wrapper.InitialConfig{Generation: gen, SecretHash: secretHash}
 	}
 
 	// Start pg_doorman with restart
@@ -113,7 +118,7 @@ func main() {
 	}()
 
 	// Watch for CRD changes
-	w := wrapper.NewCRDWatcher(cl, configName, namespace, runtimeConfig, proc, generate, logger, initialGen)
+	w := wrapper.NewCRDWatcher(cl, configName, namespace, runtimeConfig, proc, generate, secretHashFn, logger, initialCfg.Generation, initialCfg.SecretHash)
 	go w.Run(ctx, pollIntervalSec)
 
 	<-ctx.Done()
@@ -136,28 +141,34 @@ func generateAndWriteConfig(
 	cl client.Client,
 	configName, namespace string,
 	generate wrapper.ConfigGenerator,
+	secretHashFn wrapper.SecretHashFunc,
 	logger *slog.Logger,
-) (int64, error) {
+) (int64, string, error) {
 	var pgDoorman v1alpha1.PgDoorman
 	if err := cl.Get(ctx, client.ObjectKey{Name: configName, Namespace: namespace}, &pgDoorman); err != nil {
-		return 0, err
+		return 0, "", err
 	}
 
 	data, err := generate(ctx, &pgDoorman.Spec)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 
 	if _, err := wrapper.ValidateConfigBytes(data); err != nil {
-		return 0, err
+		return 0, "", err
 	}
 
 	if err := wrapper.AtomicWrite(runtimeConfig, data); err != nil {
-		return 0, err
+		return 0, "", err
+	}
+
+	var secretHash string
+	if secretHashFn != nil {
+		secretHash, _ = secretHashFn(ctx, &pgDoorman.Spec, namespace)
 	}
 
 	logger.Info("config generated and written", "configName", configName)
-	return pgDoorman.Generation, nil
+	return pgDoorman.Generation, secretHash, nil
 }
 
 func envInt(key string, defaultVal int, logger *slog.Logger) int {

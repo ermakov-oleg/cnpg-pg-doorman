@@ -39,6 +39,10 @@ func (i Implementation) ValidateClusterChange(
 }
 
 func validateConfig(cfg *config.PluginConfiguration) *operator.OperatorValidateClusterCreateResult {
+	if !cfg.Enabled {
+		return &operator.OperatorValidateClusterCreateResult{}
+	}
+
 	var errs []*operator.ValidationError
 
 	if err := cfg.Validate(); err != nil {

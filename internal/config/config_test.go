@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
@@ -24,6 +25,9 @@ func TestNewFromCluster_Defaults(t *testing.T) {
 	}
 
 	cfg := NewFromCluster(cluster)
+	if !cfg.Enabled {
+		t.Error("expected Enabled=true for matching plugin")
+	}
 	if cfg.PoolerPort != DefaultPoolerPort {
 		t.Errorf("expected default pooler port %d, got %d", DefaultPoolerPort, cfg.PoolerPort)
 	}
@@ -79,12 +83,27 @@ func TestNewFromCluster_DisabledPlugin(t *testing.T) {
 	}
 
 	cfg := NewFromCluster(cluster)
+	if cfg.Enabled {
+		t.Error("expected Enabled=false for disabled plugin")
+	}
 	// Disabled plugin should not be parsed, so defaults apply
 	if cfg.PoolerPort != DefaultPoolerPort {
 		t.Errorf("expected default pooler port for disabled plugin, got %d", cfg.PoolerPort)
 	}
 	if cfg.ConfigName != "" {
 		t.Errorf("expected empty configName for disabled plugin, got %q", cfg.ConfigName)
+	}
+}
+
+func TestNewFromCluster_NoPlugin(t *testing.T) {
+	cluster := &cnpgv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test"},
+		Spec:       cnpgv1.ClusterSpec{},
+	}
+
+	cfg := NewFromCluster(cluster)
+	if cfg.Enabled {
+		t.Error("expected Enabled=false for cluster without our plugin")
 	}
 }
 
@@ -170,9 +189,30 @@ func TestNewFromCluster_InvalidPort(t *testing.T) {
 	}
 
 	cfg := NewFromCluster(cluster)
-	// Invalid port string should keep default
+	// Invalid port string should keep default but record parse error
 	if cfg.PoolerPort != DefaultPoolerPort {
 		t.Errorf("expected default pooler port for invalid port string, got %d", cfg.PoolerPort)
+	}
+	if len(cfg.ParseErrors) != 1 {
+		t.Fatalf("expected 1 parse error, got %d", len(cfg.ParseErrors))
+	}
+}
+
+func TestValidate_ParseErrors(t *testing.T) {
+	cfg := &PluginConfiguration{
+		Enabled:      true,
+		PoolerPort:   6432,
+		MetricsPort:  9127,
+		ConfigName:   "my-config",
+		SidecarImage: "ghcr.io/example/pg-doorman:latest",
+		ParseErrors:  []string{"poolerPort: invalid integer \"abc\""},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for config with parse errors")
+	}
+	if !strings.Contains(err.Error(), "invalid plugin parameters") {
+		t.Errorf("expected 'invalid plugin parameters' in error, got %q", err.Error())
 	}
 }
 

@@ -13,16 +13,22 @@ import (
 // ConfigGenerator generates pg_doorman YAML config from a PgDoorman spec.
 type ConfigGenerator func(ctx context.Context, spec *v1alpha1.PgDoormanSpec) ([]byte, error)
 
+// SecretHashFunc computes a hash over Secrets referenced by the spec.
+// Returns empty string if no secrets are referenced.
+type SecretHashFunc func(ctx context.Context, spec *v1alpha1.PgDoormanSpec, namespace string) (string, error)
+
 // CRDWatcher polls PgDoorman CR for changes and regenerates config.
 type CRDWatcher struct {
-	client      client.Client
-	configName  string
-	namespace   string
-	runtimePath string
-	process     *Process
-	logger      *slog.Logger
-	generate    ConfigGenerator
-	lastGen     int64
+	client         client.Client
+	configName     string
+	namespace      string
+	runtimePath    string
+	process        *Process
+	logger         *slog.Logger
+	generate       ConfigGenerator
+	secretHash     SecretHashFunc
+	lastGen        int64
+	lastSecretHash string
 }
 
 // NewCRDWatcher creates a new CRD-based watcher.
@@ -34,18 +40,22 @@ func NewCRDWatcher(
 	runtimePath string,
 	process *Process,
 	generate ConfigGenerator,
+	secretHashFn SecretHashFunc,
 	logger *slog.Logger,
 	initialGeneration int64,
+	initialSecretHash string,
 ) *CRDWatcher {
 	return &CRDWatcher{
-		client:      cl,
-		configName:  configName,
-		namespace:   namespace,
-		runtimePath: runtimePath,
-		process:     process,
-		generate:    generate,
-		logger:      logger,
-		lastGen:     initialGeneration,
+		client:         cl,
+		configName:     configName,
+		namespace:      namespace,
+		runtimePath:    runtimePath,
+		process:        process,
+		generate:       generate,
+		secretHash:     secretHashFn,
+		logger:         logger,
+		lastGen:        initialGeneration,
+		lastSecretHash: initialSecretHash,
 	}
 }
 
@@ -75,11 +85,27 @@ func (w *CRDWatcher) check(ctx context.Context) {
 	}
 
 	gen := pgDoorman.Generation
-	if gen == w.lastGen {
+
+	var secretHash string
+	secretHashOK := true
+	if w.secretHash != nil {
+		var shErr error
+		secretHash, shErr = w.secretHash(ctx, &pgDoorman.Spec, w.namespace)
+		if shErr != nil {
+			w.logger.Warn("failed to collect secret versions", "error", shErr)
+			secretHashOK = false
+		}
+	}
+
+	genChanged := gen != w.lastGen
+	secretChanged := secretHashOK && secretHash != w.lastSecretHash
+
+	if !genChanged && !secretChanged {
 		return
 	}
 
-	w.logger.Info("PgDoorman CR changed", "oldGen", w.lastGen, "newGen", gen)
+	w.logger.Info("PgDoorman config changed", "oldGen", w.lastGen, "newGen", gen,
+		"secretHashChanged", secretChanged)
 
 	data, err := w.generate(ctx, &pgDoorman.Spec)
 	if err != nil {
@@ -103,27 +129,37 @@ func (w *CRDWatcher) check(ctx context.Context) {
 	}
 
 	w.lastGen = gen
+	if secretHashOK {
+		w.lastSecretHash = secretHash
+	}
 	w.logger.Info("config reloaded successfully", "generation", gen)
 }
 
+// InitialConfig holds the initial generation and secret hash from WaitForCRDConfig.
+type InitialConfig struct {
+	Generation int64
+	SecretHash string
+}
+
 // WaitForCRDConfig blocks until the PgDoorman CRD generates a valid config.
-// Returns the CR generation that produced the config.
+// Returns the CR generation and secret hash that produced the config.
 func WaitForCRDConfig(
 	ctx context.Context,
 	cl client.Client,
 	configName, namespace string,
 	runtimePath string,
 	generate ConfigGenerator,
+	secretHashFn SecretHashFunc,
 	pollSec int,
 	logger *slog.Logger,
-) int64 {
+) InitialConfig {
 	ticker := time.NewTicker(time.Duration(pollSec) * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			return 0
+			return InitialConfig{}
 		case <-ticker.C:
 			var pgDoorman v1alpha1.PgDoorman
 			if err := cl.Get(ctx, client.ObjectKey{Name: configName, Namespace: namespace}, &pgDoorman); err != nil {
@@ -147,8 +183,16 @@ func WaitForCRDConfig(
 				continue
 			}
 
+			var secretHash string
+			if secretHashFn != nil {
+				secretHash, _ = secretHashFn(ctx, &pgDoorman.Spec, namespace)
+			}
+
 			logger.Info("initial config generated from CRD")
-			return pgDoorman.Generation
+			return InitialConfig{
+				Generation: pgDoorman.Generation,
+				SecretHash: secretHash,
+			}
 		}
 	}
 }

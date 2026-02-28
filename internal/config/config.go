@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 
@@ -20,10 +21,12 @@ const (
 )
 
 type PluginConfiguration struct {
+	Enabled      bool
 	PoolerPort   int
 	MetricsPort  int
 	ConfigName   string
 	SidecarImage string
+	ParseErrors  []string
 }
 
 func NewFromCluster(cluster *cnpgv1.Cluster) *PluginConfiguration {
@@ -41,14 +44,20 @@ func NewFromCluster(cluster *cnpgv1.Cluster) *PluginConfiguration {
 			continue
 		}
 
+		cfg.Enabled = true
+
 		if v, ok := plugin.Parameters[ParamPoolerPort]; ok {
 			if port, err := strconv.Atoi(v); err == nil {
 				cfg.PoolerPort = port
+			} else {
+				cfg.ParseErrors = append(cfg.ParseErrors, fmt.Sprintf("%s: invalid integer %q", ParamPoolerPort, v))
 			}
 		}
 		if v, ok := plugin.Parameters[ParamMetricsPort]; ok {
 			if port, err := strconv.Atoi(v); err == nil {
 				cfg.MetricsPort = port
+			} else {
+				cfg.ParseErrors = append(cfg.ParseErrors, fmt.Sprintf("%s: invalid integer %q", ParamMetricsPort, v))
 			}
 		}
 		if v, ok := plugin.Parameters[ParamConfigName]; ok {
@@ -62,6 +71,9 @@ func NewFromCluster(cluster *cnpgv1.Cluster) *PluginConfiguration {
 }
 
 func (c *PluginConfiguration) Validate() error {
+	if len(c.ParseErrors) > 0 {
+		return fmt.Errorf("invalid plugin parameters: %s", strings.Join(c.ParseErrors, "; "))
+	}
 	if c.ConfigName == "" {
 		return fmt.Errorf("%s is required", ParamConfigName)
 	}

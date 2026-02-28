@@ -113,6 +113,7 @@ tasks:
     cmds:
       - >
         cd test/e2e && go test -v -timeout 30m
+        -tags e2e
         -ginkgo.v
         ./...
 

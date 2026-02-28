@@ -2,7 +2,9 @@ package credentials
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"sort"
 
 	machineryapi "github.com/cloudnative-pg/machinery/pkg/api"
 	corev1 "k8s.io/api/core/v1"
@@ -68,4 +70,67 @@ func ResolvePasswords(
 	}
 
 	return passwords, nil
+}
+
+// CollectSecretVersions computes a hash over resourceVersions of all Secrets
+// referenced by the PgDoorman spec. This allows detecting secret content changes
+// (e.g. password rotation) without a CR generation bump.
+func CollectSecretVersions(
+	ctx context.Context,
+	cl client.Client,
+	spec *v1alpha1.PgDoormanSpec,
+	namespace string,
+) (string, error) {
+	seen := make(map[string]string) // secret name -> resourceVersion
+
+	collectRef := func(ref *machineryapi.SecretKeySelector) error {
+		if ref == nil {
+			return nil
+		}
+		if _, ok := seen[ref.Name]; ok {
+			return nil
+		}
+		secret := &corev1.Secret{}
+		if err := cl.Get(ctx, client.ObjectKey{Namespace: namespace, Name: ref.Name}, secret); err != nil {
+			return fmt.Errorf("getting secret %s: %w", ref.Name, err)
+		}
+		seen[ref.Name] = secret.ResourceVersion
+		return nil
+	}
+
+	for _, pool := range spec.Pools {
+		if pool.AuthQuery != nil && pool.AuthQuery.PasswordSecretRef != nil {
+			if err := collectRef(pool.AuthQuery.PasswordSecretRef); err != nil {
+				return "", err
+			}
+		}
+		for i := range pool.Users {
+			if err := collectRef(&pool.Users[i].PasswordSecretRef); err != nil {
+				return "", err
+			}
+		}
+	}
+
+	if spec.General != nil && spec.General.AdminPasswordSecretRef != nil {
+		if err := collectRef(spec.General.AdminPasswordSecretRef); err != nil {
+			return "", err
+		}
+	}
+
+	if len(seen) == 0 {
+		return "", nil
+	}
+
+	// Build deterministic string from sorted name:resourceVersion pairs
+	pairs := make([]string, 0, len(seen))
+	for name, rv := range seen {
+		pairs = append(pairs, name+":"+rv)
+	}
+	sort.Strings(pairs)
+
+	h := sha256.New()
+	for _, p := range pairs {
+		h.Write([]byte(p))
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
