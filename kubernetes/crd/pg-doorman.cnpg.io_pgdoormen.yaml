@@ -43,8 +43,25 @@ spec:
                 description: General settings for pg_doorman.
                 properties:
                   adminPassword:
-                    description: 'AdminPassword is the admin password (default: "change-me").'
+                    description: |-
+                      AdminPassword is the admin password (default: "change-me").
+                      Ignored if AdminPasswordSecretRef is set.
                     type: string
+                  adminPasswordSecretRef:
+                    description: |-
+                      AdminPasswordSecretRef references a Secret containing the admin password.
+                      Takes precedence over AdminPassword.
+                    properties:
+                      key:
+                        description: The key to select
+                        type: string
+                      name:
+                        description: Name of the referent.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
                   adminUsername:
                     description: 'AdminUsername is the admin user (default: "admin").'
                     type: string

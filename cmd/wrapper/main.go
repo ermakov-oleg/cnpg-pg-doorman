@@ -22,7 +22,10 @@ import (
 	"github.com/o-ermakov/cnpg-pg-doorman/internal/wrapper"
 )
 
-const runtimeConfig = "/tmp/pg_doorman.yaml"
+const (
+	runtimeConfig   = "/tmp/pg_doorman.yaml"
+	pollIntervalSec = 5
+)
 
 var scheme = runtime.NewScheme()
 
@@ -39,8 +42,8 @@ func main() {
 
 	configName := os.Getenv("PG_DOORMAN_CONFIG_NAME")
 	namespace := os.Getenv("PG_DOORMAN_CONFIG_NAMESPACE")
-	poolerPort := envInt("POOLER_PORT", 6432)
-	metricsPort := envInt("METRICS_PORT", 9127)
+	poolerPort := envInt("POOLER_PORT", 6432, logger)
+	metricsPort := envInt("METRICS_PORT", 9127, logger)
 
 	if configName == "" {
 		logger.Error("PG_DOORMAN_CONFIG_NAME is required")
@@ -88,12 +91,16 @@ func main() {
 	generate := makeConfigGenerator(cl, namespace, poolerPort, metricsPort)
 
 	// Generate initial config
-	if err := generateAndWriteConfig(ctx, cl, configName, namespace, poolerPort, metricsPort, logger); err != nil {
+	var initialGen int64
+	gen, err := generateAndWriteConfig(ctx, cl, configName, namespace, generate, logger)
+	if err != nil {
 		logger.Error("initial config generation failed, waiting", "error", err)
-		wrapper.WaitForCRDConfig(ctx, cl, configName, namespace, runtimeConfig, generate, 5, logger)
+		initialGen = wrapper.WaitForCRDConfig(ctx, cl, configName, namespace, runtimeConfig, generate, pollIntervalSec, logger)
 		if ctx.Err() != nil {
 			os.Exit(0)
 		}
+	} else {
+		initialGen = gen
 	}
 
 	// Start pg_doorman with restart
@@ -106,8 +113,8 @@ func main() {
 	}()
 
 	// Watch for CRD changes
-	w := wrapper.NewCRDWatcher(cl, configName, namespace, runtimeConfig, proc, generate, logger)
-	go w.Run(ctx, 5)
+	w := wrapper.NewCRDWatcher(cl, configName, namespace, runtimeConfig, proc, generate, logger, initialGen)
+	go w.Run(ctx, pollIntervalSec)
 
 	<-ctx.Done()
 	logger.Info("shutting down")
@@ -128,41 +135,40 @@ func generateAndWriteConfig(
 	ctx context.Context,
 	cl client.Client,
 	configName, namespace string,
-	poolerPort, metricsPort int,
+	generate wrapper.ConfigGenerator,
 	logger *slog.Logger,
-) error {
+) (int64, error) {
 	var pgDoorman v1alpha1.PgDoorman
 	if err := cl.Get(ctx, client.ObjectKey{Name: configName, Namespace: namespace}, &pgDoorman); err != nil {
-		return err
+		return 0, err
 	}
 
-	passwords, err := credentials.ResolvePasswords(ctx, cl, namespace, &pgDoorman.Spec)
+	data, err := generate(ctx, &pgDoorman.Spec)
 	if err != nil {
-		return err
-	}
-
-	data, err := configgen.Generate(&pgDoorman.Spec, poolerPort, metricsPort, passwords)
-	if err != nil {
-		return err
+		return 0, err
 	}
 
 	if _, err := wrapper.ValidateConfigBytes(data); err != nil {
-		return err
+		return 0, err
 	}
 
 	if err := wrapper.AtomicWrite(runtimeConfig, data); err != nil {
-		return err
+		return 0, err
 	}
 
 	logger.Info("config generated and written", "configName", configName)
-	return nil
+	return pgDoorman.Generation, nil
 }
 
-func envInt(key string, defaultVal int) int {
-	if v := os.Getenv(key); v != "" {
-		if i, err := strconv.Atoi(v); err == nil {
-			return i
-		}
+func envInt(key string, defaultVal int, logger *slog.Logger) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return defaultVal
 	}
-	return defaultVal
+	i, err := strconv.Atoi(v)
+	if err != nil {
+		logger.Warn("invalid integer env var, using default", "key", key, "value", v, "default", defaultVal, "error", err)
+		return defaultVal
+	}
+	return i
 }

@@ -25,5 +25,9 @@ func CollectSecretNames(spec *v1alpha1.PgDoormanSpec) []string {
 		}
 	}
 
+	if spec.General != nil && spec.General.AdminPasswordSecretRef != nil {
+		add(spec.General.AdminPasswordSecretRef.Name)
+	}
+
 	return result
 }

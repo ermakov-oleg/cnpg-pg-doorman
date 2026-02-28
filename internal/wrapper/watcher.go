@@ -28,6 +28,8 @@ type CRDWatcher struct {
 }
 
 // NewCRDWatcher creates a new CRD-based watcher.
+// initialGeneration should be set to the CR generation after the initial config was written
+// to avoid a spurious reload on first poll.
 func NewCRDWatcher(
 	cl client.Client,
 	configName, namespace string,
@@ -35,6 +37,7 @@ func NewCRDWatcher(
 	process *Process,
 	generate ConfigGenerator,
 	logger *slog.Logger,
+	initialGeneration int64,
 ) *CRDWatcher {
 	return &CRDWatcher{
 		client:      cl,
@@ -44,6 +47,7 @@ func NewCRDWatcher(
 		process:     process,
 		generate:    generate,
 		logger:      logger,
+		lastGen:     initialGeneration,
 	}
 }
 
@@ -126,6 +130,7 @@ func (w *CRDWatcher) check(ctx context.Context) {
 }
 
 // WaitForCRDConfig blocks until the PgDoorman CRD generates a valid config.
+// Returns the CR generation that produced the config.
 func WaitForCRDConfig(
 	ctx context.Context,
 	cl client.Client,
@@ -134,14 +139,14 @@ func WaitForCRDConfig(
 	generate ConfigGenerator,
 	pollSec int,
 	logger *slog.Logger,
-) {
+) int64 {
 	ticker := time.NewTicker(time.Duration(pollSec) * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return 0
 		case <-ticker.C:
 			var pgDoorman v1alpha1.PgDoorman
 			if err := cl.Get(ctx, client.ObjectKey{Name: configName, Namespace: namespace}, &pgDoorman); err != nil {
@@ -166,7 +171,7 @@ func WaitForCRDConfig(
 			}
 
 			logger.Info("initial config generated from CRD")
-			return
+			return pgDoorman.Generation
 		}
 	}
 }

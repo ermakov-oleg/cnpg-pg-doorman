@@ -5,6 +5,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+
 // PgDoormanSpec defines the desired state of PgDoorman.
 type PgDoormanSpec struct {
 	// Pools defines the connection pools.
@@ -105,8 +106,14 @@ type GeneralSpec struct {
 	AdminUsername string `json:"adminUsername,omitempty"`
 
 	// AdminPassword is the admin password (default: "change-me").
+	// Ignored if AdminPasswordSecretRef is set.
 	// +optional
 	AdminPassword string `json:"adminPassword,omitempty"`
+
+	// AdminPasswordSecretRef references a Secret containing the admin password.
+	// Takes precedence over AdminPassword.
+	// +optional
+	AdminPasswordSecretRef *machineryapi.SecretKeySelector `json:"adminPasswordSecretRef,omitempty"`
 }
 
 // PrometheusSpec defines Prometheus metrics configuration.

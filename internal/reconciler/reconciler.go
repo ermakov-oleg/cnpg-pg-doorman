@@ -143,6 +143,8 @@ func (r Implementation) ensureRoleBinding(
 	ctx context.Context,
 	cluster *cnpgv1.Cluster,
 ) error {
+	newRoleBinding := specs.BuildRoleBinding(cluster)
+
 	var roleBinding rbacv1.RoleBinding
 	if err := r.Client.Get(ctx, client.ObjectKey{
 		Namespace: cluster.Namespace,
@@ -152,11 +154,30 @@ func (r Implementation) ensureRoleBinding(
 			return err
 		}
 
-		newRoleBinding := specs.BuildRoleBinding(cluster)
 		if err := ctrl.SetControllerReference(cluster, newRoleBinding, r.Client.Scheme()); err != nil {
 			return err
 		}
 		return r.Client.Create(ctx, newRoleBinding)
+	}
+
+	// RoleRef is immutable — if it changed, delete and recreate
+	if !equality.Semantic.DeepEqual(roleBinding.RoleRef, newRoleBinding.RoleRef) {
+		slog.Info("RoleRef changed, recreating RoleBinding", "name", roleBinding.Name)
+		if err := r.Client.Delete(ctx, &roleBinding); err != nil {
+			return err
+		}
+		if err := ctrl.SetControllerReference(cluster, newRoleBinding, r.Client.Scheme()); err != nil {
+			return err
+		}
+		return r.Client.Create(ctx, newRoleBinding)
+	}
+
+	// Update subjects if they changed
+	if !equality.Semantic.DeepEqual(roleBinding.Subjects, newRoleBinding.Subjects) {
+		slog.Info("Patching RoleBinding subjects", "name", roleBinding.Name)
+		patch := client.MergeFrom(roleBinding.DeepCopy())
+		roleBinding.Subjects = newRoleBinding.Subjects
+		return r.Client.Patch(ctx, &roleBinding, patch)
 	}
 
 	return nil

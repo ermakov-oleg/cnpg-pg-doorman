@@ -1,16 +1,13 @@
 package wrapper
 
 import (
-	"crypto/sha256"
 	"fmt"
-	"io"
-	"log/slog"
 	"os"
 
 	"gopkg.in/yaml.v3"
 )
 
-// DoormanConfig — минимальная структура конфига pg_doorman для валидации.
+// DoormanConfig is a minimal pg_doorman config structure for validation.
 type DoormanConfig struct {
 	General    GeneralConfig         `yaml:"general"`
 	Pools      map[string]PoolConfig `yaml:"pools"`
@@ -97,34 +94,7 @@ func ValidateConfigBytes(data []byte) (*DoormanConfig, error) {
 	return &cfg, nil
 }
 
-func ValidateConfigFile(path string) (*DoormanConfig, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config: %w", err)
-	}
-	return ValidateConfigBytes(data)
-}
-
-// ValidateAndCopyConfig валидирует конфиг и делает atomic copy в destination.
-func ValidateAndCopyConfig(src, dst string, logger *slog.Logger) error {
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return fmt.Errorf("failed to read config: %w", err)
-	}
-
-	if _, err := ValidateConfigBytes(data); err != nil {
-		return err
-	}
-
-	if err := AtomicWrite(dst, data); err != nil {
-		return fmt.Errorf("failed to write config: %w", err)
-	}
-
-	logger.Info("config validated and copied", "src", src, "dst", dst)
-	return nil
-}
-
-// AtomicWrite записывает данные через temp file + fsync + rename.
+// AtomicWrite writes data via temp file + fsync + rename.
 func AtomicWrite(path string, data []byte) error {
 	tmp := path + ".tmp"
 	f, err := os.Create(tmp)
@@ -150,20 +120,4 @@ func AtomicWrite(path string, data []byte) error {
 	}
 
 	return os.Rename(tmp, path)
-}
-
-// FileHash возвращает SHA256 хеш файла.
-func FileHash(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close() //nolint:errcheck // read-only file
-
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }

@@ -74,17 +74,22 @@ func (e *ExtendedClient) getCachedObject(
 	e.mux.Lock()
 	defer e.mux.Unlock()
 
-	expiredObjectIndex := -1
-	for idx, cacheEntry := range e.cachedObjects {
+	// Evict all expired entries to prevent unbounded growth
+	alive := e.cachedObjects[:0]
+	for _, ce := range e.cachedObjects {
+		if !ce.isExpired() {
+			alive = append(alive, ce)
+		}
+	}
+	e.cachedObjects = alive
+
+	// Look for cache hit
+	for _, cacheEntry := range e.cachedObjects {
 		if cacheEntry.entry.GetNamespace() != key.Namespace || cacheEntry.entry.GetName() != key.Name {
 			continue
 		}
 		if reflect.TypeOf(cacheEntry.entry) != reflect.TypeOf(obj) {
 			continue
-		}
-		if cacheEntry.isExpired() {
-			expiredObjectIndex = idx
-			break
 		}
 
 		outVal := reflect.ValueOf(obj)
@@ -96,21 +101,16 @@ func (e *ExtendedClient) getCachedObject(
 		return nil
 	}
 
+	// Cache miss — fetch from API
 	if err := e.Client.Get(ctx, key, obj, opts...); err != nil {
 		return err
 	}
 
-	cs := cachedEntry{
+	e.cachedObjects = append(e.cachedObjects, cachedEntry{
 		entry:         obj.(runtime.Object).DeepCopyObject().(client.Object),
 		fetchUnixTime: time.Now().Unix(),
 		ttl:           time.Duration(DefaultTTLSeconds) * time.Second,
-	}
-
-	if expiredObjectIndex != -1 {
-		e.cachedObjects[expiredObjectIndex] = cs
-	} else {
-		e.cachedObjects = append(e.cachedObjects, cs)
-	}
+	})
 
 	return nil
 }

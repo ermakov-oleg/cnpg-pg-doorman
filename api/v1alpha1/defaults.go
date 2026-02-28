@@ -49,7 +49,7 @@ func ApplyDefaults(spec *PgDoormanSpec) {
 	if g.AdminUsername == "" {
 		g.AdminUsername = DefaultAdminUsername
 	}
-	if g.AdminPassword == "" {
+	if g.AdminPassword == "" && g.AdminPasswordSecretRef == nil {
 		g.AdminPassword = DefaultAdminPassword
 	}
 

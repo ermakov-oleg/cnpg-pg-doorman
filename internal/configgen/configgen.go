@@ -7,18 +7,26 @@ import (
 	"github.com/o-ermakov/cnpg-pg-doorman/internal/wrapper"
 )
 
+// AdminPasswordKey is the passwords map key for the admin password resolved from SecretRef.
+const AdminPasswordKey = "_admin/password"
+
 // Generate creates pg_doorman YAML config from PgDoormanSpec.
 // The passwords map is keyed by "{poolName}/{type}/{username}" and contains resolved passwords.
 func Generate(spec *v1alpha1.PgDoormanSpec, poolerPort, metricsPort int, passwords map[string]string) ([]byte, error) {
 	applied := spec.DeepCopy()
 	v1alpha1.ApplyDefaults(applied)
 
+	adminPassword := applied.General.AdminPassword
+	if p, ok := passwords[AdminPasswordKey]; ok {
+		adminPassword = p
+	}
+
 	cfg := wrapper.DoormanConfig{
 		General: wrapper.GeneralConfig{
 			Host:            "0.0.0.0",
 			Port:            poolerPort,
 			AdminUsername:   applied.General.AdminUsername,
-			AdminPassword:   applied.General.AdminPassword,
+			AdminPassword:   adminPassword,
 			WorkerThreads:   *applied.General.WorkerThreads,
 			MaxConnections:  *applied.General.MaxConnections,
 			ConnectTimeout:  applied.General.ConnectTimeout,
@@ -38,6 +46,7 @@ func Generate(spec *v1alpha1.PgDoormanSpec, poolerPort, metricsPort int, passwor
 	}
 
 	for poolName, pool := range applied.Pools {
+		// Hardcoded for sidecar pattern: pg_doorman runs in the same pod as PostgreSQL
 		pc := wrapper.PoolConfig{
 			ServerHost: "localhost",
 			ServerPort: 5432,

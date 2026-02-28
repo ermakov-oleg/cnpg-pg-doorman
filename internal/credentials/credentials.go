@@ -58,5 +58,14 @@ func ResolvePasswords(
 		}
 	}
 
+	// Resolve admin password from secret if configured
+	if spec.General != nil && spec.General.AdminPasswordSecretRef != nil {
+		val, err := ExtractSecretValue(ctx, cl, spec.General.AdminPasswordSecretRef, ns)
+		if err != nil {
+			return nil, fmt.Errorf("admin password: %w", err)
+		}
+		passwords[configgen.AdminPasswordKey] = val
+	}
+
 	return passwords, nil
 }

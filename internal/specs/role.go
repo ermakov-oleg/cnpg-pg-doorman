@@ -39,7 +39,7 @@ func BuildRole(
 		role.Rules = append(role.Rules, rbacv1.PolicyRule{
 			APIGroups:     []string{""},
 			Resources:     []string{"secrets"},
-			Verbs:         []string{"get", "watch", "list"},
+			Verbs:         []string{"get"},
 			ResourceNames: secretNames,
 		})
 	}

@@ -180,6 +180,34 @@ func TestGenerate_CustomGeneral(t *testing.T) {
 	}
 }
 
+func TestGenerate_AdminPasswordFromPasswords(t *testing.T) {
+	spec := &v1alpha1.PgDoormanSpec{
+		Pools: map[string]v1alpha1.PoolSpec{
+			"app": {
+				AuthQuery: &v1alpha1.AuthQuerySpec{User: "doorman_auth"},
+			},
+		},
+	}
+
+	passwords := map[string]string{
+		AdminPasswordKey: "super-secret-admin",
+	}
+
+	data, err := Generate(spec, 6432, 9127, passwords)
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	var cfg wrapper.DoormanConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	if cfg.General.AdminPassword != "super-secret-admin" {
+		t.Errorf("expected admin password from passwords map, got %q", cfg.General.AdminPassword)
+	}
+}
+
 func TestPasswordKey(t *testing.T) {
 	got := PasswordKey("app", "auth_query", "doorman")
 	if got != "app/auth_query/doorman" {
