@@ -1,0 +1,196 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: pgdoormen.pg-doorman.cnpg.io
+spec:
+  group: pg-doorman.cnpg.io
+  names:
+    kind: PgDoorman
+    listKind: PgDoormanList
+    plural: pgdoormen
+    singular: pgdoorman
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: PgDoorman is the Schema for the pgdoormans API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: PgDoormanSpec defines the desired state of PgDoorman.
+            properties:
+              general:
+                description: General settings for pg_doorman.
+                properties:
+                  adminPassword:
+                    description: |-
+                      AdminPassword is the admin password (default: "change-me").
+                      Ignored if AdminPasswordSecretRef is set.
+                    type: string
+                  adminPasswordSecretRef:
+                    description: |-
+                      AdminPasswordSecretRef references a Secret containing the admin password.
+                      Takes precedence over AdminPassword.
+                    properties:
+                      key:
+                        description: The key to select
+                        type: string
+                      name:
+                        description: Name of the referent.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    type: object
+                  adminUsername:
+                    description: 'AdminUsername is the admin user (default: "admin").'
+                    type: string
+                  connectTimeout:
+                    description: 'ConnectTimeout is the connection timeout (default:
+                      "3s").'
+                    type: string
+                  idleTimeout:
+                    description: 'IdleTimeout is the idle connection timeout (default:
+                      "5m").'
+                    type: string
+                  maxConnections:
+                    description: 'MaxConnections is the maximum number of connections
+                      (default: 8192).'
+                    type: integer
+                  serverLifetime:
+                    description: 'ServerLifetime is the server connection lifetime
+                      (default: "5m").'
+                    type: string
+                  shutdownTimeout:
+                    description: 'ShutdownTimeout is the graceful shutdown timeout
+                      (default: "10s").'
+                    type: string
+                  workerThreads:
+                    description: 'WorkerThreads is the number of worker threads (default:
+                      4).'
+                    type: integer
+                type: object
+              pools:
+                additionalProperties:
+                  description: PoolSpec defines configuration for a single connection
+                    pool.
+                  properties:
+                    authQuery:
+                      description: AuthQuery defines auth_query-based authentication.
+                      properties:
+                        database:
+                          description: 'Database is the database for auth queries
+                            (default: "postgres").'
+                          type: string
+                        passwordSecretRef:
+                          description: |-
+                            PasswordSecretRef references a Secret containing the auth user password.
+                            If not set, empty password is used.
+                          properties:
+                            key:
+                              description: The key to select
+                              type: string
+                            name:
+                              description: Name of the referent.
+                              type: string
+                          required:
+                          - key
+                          - name
+                          type: object
+                        poolSize:
+                          description: 'PoolSize is the pool size for the auth user
+                            (default: 2).'
+                          type: integer
+                        query:
+                          description: 'Query is the SQL query (default: "SELECT *
+                            FROM public.doorman_auth_query($1)").'
+                          type: string
+                        user:
+                          description: User is the PostgreSQL user for auth queries.
+                          type: string
+                      required:
+                      - user
+                      type: object
+                    defaultPoolSize:
+                      description: 'DefaultPoolSize is the default pool size for auth_query
+                        users (default: 40).'
+                      type: integer
+                    poolMode:
+                      description: 'PoolMode is the pooling mode (default: "transaction").'
+                      type: string
+                    users:
+                      description: Users defines static user credentials.
+                      items:
+                        description: UserSpec defines a static user.
+                        properties:
+                          passwordSecretRef:
+                            description: PasswordSecretRef references a Secret containing
+                              the user password.
+                            properties:
+                              key:
+                                description: The key to select
+                                type: string
+                              name:
+                                description: Name of the referent.
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
+                          poolSize:
+                            description: 'PoolSize is the pool size for this user
+                              (default: 20).'
+                            type: integer
+                          username:
+                            description: Username is the PostgreSQL username.
+                            type: string
+                        required:
+                        - passwordSecretRef
+                        - username
+                        type: object
+                      type: array
+                  type: object
+                description: Pools defines the connection pools.
+                type: object
+              prometheus:
+                description: Prometheus metrics configuration.
+                properties:
+                  enabled:
+                    description: 'Enabled controls whether Prometheus metrics are
+                      enabled (default: true).'
+                    type: boolean
+                type: object
+            required:
+            - pools
+            type: object
+          status:
+            description: PgDoormanStatus defines the observed state of PgDoorman.
+            type: object
+        required:
+        - metadata
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

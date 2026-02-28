@@ -14,16 +14,16 @@ const (
 	DefaultPoolerPort  = 6432
 	DefaultMetricsPort = 9127
 
-	ParamPoolerPort    = "poolerPort"
-	ParamMetricsPort   = "metricsPort"
-	ParamConfigMapName = "configMapName"
+	ParamPoolerPort  = "poolerPort"
+	ParamMetricsPort = "metricsPort"
+	ParamConfigName  = "configName"
 )
 
 type PluginConfiguration struct {
-	PoolerPort    int
-	MetricsPort   int
-	ConfigMapName string
-	SidecarImage  string
+	PoolerPort   int
+	MetricsPort  int
+	ConfigName   string
+	SidecarImage string
 }
 
 func NewFromCluster(cluster *cnpgv1.Cluster) *PluginConfiguration {
@@ -51,8 +51,8 @@ func NewFromCluster(cluster *cnpgv1.Cluster) *PluginConfiguration {
 				cfg.MetricsPort = port
 			}
 		}
-		if v, ok := plugin.Parameters[ParamConfigMapName]; ok {
-			cfg.ConfigMapName = v
+		if v, ok := plugin.Parameters[ParamConfigName]; ok {
+			cfg.ConfigName = v
 		}
 
 		break
@@ -62,14 +62,17 @@ func NewFromCluster(cluster *cnpgv1.Cluster) *PluginConfiguration {
 }
 
 func (c *PluginConfiguration) Validate() error {
-	if c.ConfigMapName == "" {
-		return fmt.Errorf("%s is required", ParamConfigMapName)
+	if c.ConfigName == "" {
+		return fmt.Errorf("%s is required", ParamConfigName)
 	}
 	if c.PoolerPort <= 0 || c.PoolerPort > 65535 {
 		return fmt.Errorf("%s must be between 1 and 65535, got %d", ParamPoolerPort, c.PoolerPort)
 	}
 	if c.MetricsPort <= 0 || c.MetricsPort > 65535 {
 		return fmt.Errorf("%s must be between 1 and 65535, got %d", ParamMetricsPort, c.MetricsPort)
+	}
+	if c.SidecarImage == "" {
+		return fmt.Errorf("SIDECAR_IMAGE environment variable is required")
 	}
 	if c.PoolerPort == c.MetricsPort {
 		return fmt.Errorf("%s and %s must be different", ParamPoolerPort, ParamMetricsPort)

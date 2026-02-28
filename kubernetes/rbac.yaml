@@ -1,0 +1,34 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app: pg-doorman
+  name: pg-doorman
+rules:
+  # Read PgDoorman CRDs (cached by controller-runtime)
+  - apiGroups: ["pg-doorman.cnpg.io"]
+    resources: ["pgdoormen"]
+    verbs: ["get", "list", "watch"]
+  # Manage Roles in cluster namespaces (direct, no cache)
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles"]
+    verbs: ["get", "create", "update", "patch"]
+  # Manage RoleBindings in cluster namespaces (direct, no cache)
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["rolebindings"]
+    verbs: ["get", "create", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app: pg-doorman
+  name: pg-doorman
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pg-doorman
+subjects:
+  - kind: ServiceAccount
+    name: pg-doorman
+    namespace: cnpg-system

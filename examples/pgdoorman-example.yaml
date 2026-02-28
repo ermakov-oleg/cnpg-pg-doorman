@@ -1,0 +1,9 @@
+apiVersion: pg-doorman.cnpg.io/v1alpha1
+kind: PgDoorman
+metadata:
+  name: my-cluster-doorman
+spec:
+  pools:
+    app:
+      authQuery:
+        user: doorman_auth

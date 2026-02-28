@@ -16,6 +16,7 @@ spec:
       labels:
         app: pg-doorman
     spec:
+      serviceAccountName: pg-doorman
       securityContext:
         runAsNonRoot: true
         seccompProfile:

@@ -10,7 +10,7 @@ spec:
       parameters:
         poolerPort: "6432"
         metricsPort: "9127"
-        configMapName: "my-cluster-pg-doorman"
+        configName: "my-cluster-doorman"
 
   postgresql:
     pg_hba:

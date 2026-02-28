@@ -9,6 +9,8 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	pgdoormanv1alpha1 "github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
 )
 
 func NewClient() (client.Client, *kubernetes.Clientset, *rest.Config, error) {
@@ -23,6 +25,7 @@ func NewClient() (client.Client, *kubernetes.Clientset, *rest.Config, error) {
 	_ = appsv1.AddToScheme(scheme)
 	_ = cnpgv1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
+	_ = pgdoormanv1alpha1.AddToScheme(scheme)
 
 	cl, err := client.New(config, client.Options{Scheme: scheme})
 	if err != nil {
