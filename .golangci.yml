@@ -5,4 +5,5 @@ linters:
     staticcheck:
       checks:
         - "all"
+        - "-ST1000" # don't require package comments
         - "-ST1001" # allow dot imports (ginkgo/gomega in e2e tests)
