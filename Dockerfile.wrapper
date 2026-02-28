@@ -1,0 +1,14 @@
+# Build Go wrapper
+FROM golang:1.25 AS go-builder
+
+WORKDIR /workspace
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /doorman-wrapper ./cmd/wrapper/
+
+# Final image: pg_doorman base + our wrapper
+FROM ghcr.io/ozontech/pg_doorman:latest
+COPY --from=go-builder /doorman-wrapper /usr/local/bin/doorman-wrapper
+ENTRYPOINT ["/usr/local/bin/doorman-wrapper"]

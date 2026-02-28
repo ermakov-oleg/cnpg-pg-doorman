@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cnpg-system
+resources:
+  - certificate-issuer.yaml
+  - client-certificate.yaml
+  - deployment.yaml
+  - server-certificate.yaml
+  - service.yaml
+images:
+  - name: pg-doorman-plugin
+    newName: pg-doorman-plugin
+    newTag: testing
+patches:
+  - target:
+      kind: Deployment
+      name: pg-doorman
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: pg-doorman-wrapper:testing

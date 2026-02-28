@@ -1,0 +1,16 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: pg-doorman-client
+spec:
+  secretName: pg-doorman-client-tls
+  commonName: pg-doorman-client
+  duration: 2160h
+  renewBefore: 360h
+  isCA: false
+  usages:
+    - client auth
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io

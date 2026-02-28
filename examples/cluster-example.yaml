@@ -1,0 +1,36 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: my-cluster
+spec:
+  instances: 3
+
+  plugins:
+    - name: pg-doorman.cnpg.io
+      parameters:
+        poolerPort: "6432"
+        metricsPort: "9127"
+        configMapName: "my-cluster-pg-doorman"
+
+  postgresql:
+    pg_hba:
+      # Allow doorman_auth to connect via localhost without password (for auth_query)
+      - host all doorman_auth 127.0.0.1/32 trust
+
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+      postInitSQL:
+        - CREATE ROLE doorman_auth WITH LOGIN NOINHERIT
+        - |
+          CREATE OR REPLACE FUNCTION public.doorman_auth_query(username TEXT)
+          RETURNS TABLE (usename name, passwd text)
+          SECURITY DEFINER
+          SET search_path = pg_catalog
+          LANGUAGE SQL
+          AS $$ SELECT usename, passwd FROM pg_shadow WHERE usename = $1 $$
+        - GRANT EXECUTE ON FUNCTION public.doorman_auth_query(TEXT) TO doorman_auth
+
+  storage:
+    size: 10Gi

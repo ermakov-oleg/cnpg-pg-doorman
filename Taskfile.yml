@@ -1,0 +1,115 @@
+version: 3
+
+vars:
+  E2E_KUBERNETES_VERSION: v1.35.0
+  KIND_CLUSTER_NAME: pg-doorman-e2e
+  PLUGIN_IMAGE: pg-doorman-plugin:testing
+  WRAPPER_IMAGE: pg-doorman-wrapper:testing
+  CERT_MANAGER_VERSION: v1.17.2
+  CNPG_VERSION: "1.28.0"
+
+tasks:
+  build:
+    desc: Build all Go binaries
+    cmds:
+      - go build ./...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  test:
+    desc: Run unit tests
+    cmds:
+      - go test ./internal/... -v
+
+  build-plugin-image:
+    desc: Build plugin gRPC server Docker image
+    cmds:
+      - docker build -t {{.PLUGIN_IMAGE}} -f Dockerfile .
+
+  build-wrapper-image:
+    desc: Build wrapper sidecar Docker image
+    cmds:
+      - docker build -t {{.WRAPPER_IMAGE}} -f Dockerfile.wrapper .
+
+  build-images:
+    desc: Build all Docker images
+    deps:
+      - build-plugin-image
+      - build-wrapper-image
+
+  start-kind:
+    desc: Create kind cluster for e2e tests
+    run: once
+    cmds:
+      - kind create cluster --name {{.KIND_CLUSTER_NAME}} --image kindest/node:{{.E2E_KUBERNETES_VERSION}} --wait 5m
+    status:
+      - kind get clusters | grep -q {{.KIND_CLUSTER_NAME}}
+
+  load-images:
+    desc: Load Docker images into kind cluster
+    deps:
+      - build-images
+      - start-kind
+    cmds:
+      - kind load docker-image {{.PLUGIN_IMAGE}} --name {{.KIND_CLUSTER_NAME}}
+      - kind load docker-image {{.WRAPPER_IMAGE}} --name {{.KIND_CLUSTER_NAME}}
+
+  install-cert-manager:
+    desc: Install cert-manager into the cluster
+    deps:
+      - start-kind
+    cmds:
+      - kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/{{.CERT_MANAGER_VERSION}}/cert-manager.yaml
+      - >
+        kubectl wait --for=condition=Available deployment/cert-manager
+        -n cert-manager --timeout=300s
+      - >
+        kubectl wait --for=condition=Available deployment/cert-manager-cainjector
+        -n cert-manager --timeout=300s
+      - >
+        kubectl wait --for=condition=Available deployment/cert-manager-webhook
+        -n cert-manager --timeout=300s
+    status:
+      - kubectl get deployment cert-manager -n cert-manager -o jsonpath='{.status.availableReplicas}' | grep -q '1'
+
+  install-cnpg:
+    desc: Install CloudNativePG operator
+    deps:
+      - start-kind
+    cmds:
+      - kubectl apply --server-side -f https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v{{.CNPG_VERSION}}/cnpg-{{.CNPG_VERSION}}.yaml
+      - >
+        kubectl wait --for=condition=Available deployment/cnpg-controller-manager
+        -n cnpg-system --timeout=300s
+    status:
+      - kubectl get deployment cnpg-controller-manager -n cnpg-system -o jsonpath='{.status.availableReplicas}' | grep -q '1'
+
+  deploy-plugin:
+    desc: Deploy pg-doorman plugin to cluster
+    deps:
+      - load-images
+      - install-cert-manager
+      - install-cnpg
+    cmds:
+      - kubectl apply -k kubernetes/
+      - >
+        kubectl wait --for=condition=Available deployment/pg-doorman
+        -n cnpg-system --timeout=120s
+
+  e2e:
+    desc: Run e2e tests (full cycle)
+    deps:
+      - deploy-plugin
+    cmds:
+      - >
+        cd test/e2e && go test -v -timeout 30m
+        -ginkgo.v
+        ./...
+
+  clean:
+    desc: Clean up kind cluster
+    cmds:
+      - kind delete cluster --name {{.KIND_CLUSTER_NAME}}
