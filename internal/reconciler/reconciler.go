@@ -60,11 +60,15 @@ func (r Implementation) Pre(
 	}
 
 	pluginConfig := config.NewFromCluster(&cluster)
-	if pluginConfig.ConfigName == "" {
-		slog.Info("configName not set, skipping RBAC reconciliation")
+	if !pluginConfig.Enabled {
+		slog.Info("pg-doorman plugin not enabled, skipping RBAC reconciliation")
 		return &reconciler.ReconcilerHooksResult{
 			Behavior: reconciler.ReconcilerHooksResult_BEHAVIOR_CONTINUE,
 		}, nil
+	}
+	if err := pluginConfig.Validate(); err != nil {
+		slog.Info("plugin config invalid, blocking reconciliation", "error", err)
+		return nil, err
 	}
 
 	// Read PgDoorman CR

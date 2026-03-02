@@ -407,16 +407,29 @@ var _ = Describe("pg_doorman pooler", func() {
 		}
 	})
 
-	// Test 11: Invalid plugin parameters rejected by admission
-	It("should reject cluster with invalid plugin parameters", func(ctx SpecContext) {
+	// Test 11: Invalid plugin parameters block reconciliation
+	It("should block cluster reconciliation when plugin parameters are invalid", func(ctx SpecContext) {
 		By("creating PgDoorman CR")
 		Expect(cl.Create(ctx, newPgDoorman(ns.Name, "cr-invalid-params"))).To(Succeed())
 
 		By("creating Cluster with invalid poolerPort")
 		c := newClusterWithInvalidParams(ns.Name, "test-invalid-params", "cr-invalid-params")
-		err := cl.Create(ctx, c)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("invalid plugin parameters"))
+		Expect(cl.Create(ctx, c)).To(Succeed())
+
+		By("verifying no pods are created (reconciliation blocked by invalid plugin config)")
+		Consistently(func(g Gomega) {
+			var podList corev1.PodList
+			g.Expect(cl.List(ctx, &podList, client.InNamespace(ns.Name),
+				client.MatchingLabels{"cnpg.io/cluster": "test-invalid-params"})).To(Succeed())
+			g.Expect(podList.Items).To(BeEmpty())
+		}).WithTimeout(30 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
+
+		By("verifying cluster has no ready instances")
+		var current cnpgv1.Cluster
+		Expect(cl.Get(ctx, types.NamespacedName{
+			Name: "test-invalid-params", Namespace: ns.Name,
+		}, &current)).To(Succeed())
+		Expect(current.Status.ReadyInstances).To(Equal(0))
 	})
 
 	// Test 12: Secret rotation triggers config reload with admin password verification
@@ -464,7 +477,7 @@ var _ = Describe("pg_doorman pooler", func() {
 		By("waiting for wrapper to detect secret change and reload config")
 		Eventually(func() string {
 			return getSidecarLogs(ctx, clientset, ns.Name, podName)
-		}).WithTimeout(2*time.Minute).WithPolling(5*time.Second).Should(
+		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(
 			And(
 				ContainSubstring(`"secretHashChanged":true`),
 				ContainSubstring("config reloaded successfully"),
@@ -511,7 +524,7 @@ var _ = Describe("pg_doorman pooler", func() {
 		By("waiting for wrapper to restart pg_doorman")
 		Eventually(func() string {
 			return getSidecarLogs(ctx, clientset, ns.Name, podName)
-		}).WithTimeout(2*time.Minute).WithPolling(10*time.Second).Should(
+		}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(
 			ContainSubstring("pg_doorman exited unexpectedly, restarting"),
 		)
 
