@@ -1,3 +1,5 @@
+//go:build e2e
+
 package pooler
 
 import (
@@ -375,7 +377,134 @@ var _ = Describe("pg_doorman pooler", func() {
 		Expect(stdout).To(ContainSubstring("1"))
 	})
 
-	// Test 10: Sidecar restart on crash
+	// Test 10: Cluster without plugin passes admission
+	It("should allow creating a cluster without pg-doorman plugin", func(ctx SpecContext) {
+		clusterName := "test-no-plugin"
+
+		By("creating Cluster without pg-doorman plugin")
+		c := newClusterWithoutPlugin(ns.Name, clusterName)
+		Expect(cl.Create(ctx, c)).To(Succeed())
+
+		By("waiting for cluster to be ready")
+		Eventually(func(g Gomega) {
+			var current cnpgv1.Cluster
+			g.Expect(cl.Get(ctx, types.NamespacedName{
+				Name: clusterName, Namespace: ns.Name,
+			}, &current)).To(Succeed())
+			g.Expect(cluster.IsReady(current)).To(BeTrue())
+		}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+
+		By("verifying no pg-doorman sidecar was injected")
+		var podList corev1.PodList
+		Expect(cl.List(ctx, &podList, client.InNamespace(ns.Name),
+			client.MatchingLabels{"cnpg.io/cluster": clusterName})).To(Succeed())
+		Expect(podList.Items).NotTo(BeEmpty())
+		for _, pod := range podList.Items {
+			for _, c := range pod.Spec.InitContainers {
+				Expect(c.Name).NotTo(Equal("pg-doorman"),
+					"pg-doorman sidecar should not be injected into cluster without the plugin")
+			}
+		}
+	})
+
+	// Test 11: Invalid plugin parameters block reconciliation
+	It("should block cluster reconciliation when plugin parameters are invalid", func(ctx SpecContext) {
+		By("creating PgDoorman CR")
+		Expect(cl.Create(ctx, newPgDoorman(ns.Name, "cr-invalid-params"))).To(Succeed())
+
+		By("creating Cluster with invalid poolerPort")
+		c := newClusterWithInvalidParams(ns.Name, "test-invalid-params", "cr-invalid-params")
+		Expect(cl.Create(ctx, c)).To(Succeed())
+
+		By("verifying no pods are created (reconciliation blocked by invalid plugin config)")
+		Consistently(func(g Gomega) {
+			var podList corev1.PodList
+			g.Expect(cl.List(ctx, &podList, client.InNamespace(ns.Name),
+				client.MatchingLabels{"cnpg.io/cluster": "test-invalid-params"})).To(Succeed())
+			g.Expect(podList.Items).To(BeEmpty())
+		}).WithTimeout(30 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
+
+		By("verifying cluster has no ready instances")
+		var current cnpgv1.Cluster
+		Expect(cl.Get(ctx, types.NamespacedName{
+			Name: "test-invalid-params", Namespace: ns.Name,
+		}, &current)).To(Succeed())
+		Expect(current.Status.ReadyInstances).To(Equal(0))
+	})
+
+	// Test 12: Secret rotation triggers config reload with admin password verification
+	It("should reload config when referenced Secret changes and apply new admin password", func(ctx SpecContext) {
+		configName := "cr-secret-rotate"
+		clusterName := "test-secret-rotate"
+		secretName := "admin-password"
+		initialPassword := "initial-password"
+		rotatedPassword := "rotated-password"
+
+		By("creating admin password Secret")
+		Expect(cl.Create(ctx, newPasswordSecret(ns.Name, secretName, initialPassword))).To(Succeed())
+
+		By("creating PgDoorman CR with secret ref")
+		Expect(cl.Create(ctx, newPgDoormanWithSecretRef(ns.Name, configName, secretName))).To(Succeed())
+
+		By("creating Cluster")
+		Expect(cl.Create(ctx, newCluster(ns.Name, clusterName, configName))).To(Succeed())
+
+		By("waiting for cluster to be ready")
+		Eventually(func(g Gomega) {
+			var current cnpgv1.Cluster
+			g.Expect(cl.Get(ctx, types.NamespacedName{
+				Name: clusterName, Namespace: ns.Name,
+			}, &current)).To(Succeed())
+			g.Expect(cluster.IsReady(current)).To(BeTrue())
+		}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+
+		podName := getPodName(ctx, cl, ns.Name, clusterName)
+
+		By("verifying admin login works with initial password")
+		Eventually(func(g Gomega) {
+			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName,
+				initialPassword, "admin", "pgdoorman", "SHOW VERSION")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(stdout).NotTo(BeEmpty())
+		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+
+		By("rotating the admin password Secret")
+		var secret corev1.Secret
+		Expect(cl.Get(ctx, types.NamespacedName{Name: secretName, Namespace: ns.Name}, &secret)).To(Succeed())
+		secret.Data["password"] = []byte(rotatedPassword)
+		Expect(cl.Update(ctx, &secret)).To(Succeed())
+
+		By("waiting for wrapper to detect secret change and reload config")
+		Eventually(func() string {
+			return getSidecarLogs(ctx, clientset, ns.Name, podName)
+		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(
+			And(
+				ContainSubstring(`"secretHashChanged":true`),
+				ContainSubstring("config reloaded successfully"),
+			),
+		)
+
+		By("verifying admin login works with rotated password")
+		Eventually(func(g Gomega) {
+			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName,
+				rotatedPassword, "admin", "pgdoorman", "SHOW VERSION")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(stdout).NotTo(BeEmpty())
+		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+
+		By("verifying old password no longer works")
+		_, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName,
+			initialPassword, "admin", "pgdoorman", "SHOW VERSION")
+		Expect(err).To(HaveOccurred())
+
+		By("verifying app pooler still works after admin password rotation")
+		password := getAppPassword(ctx, cl, ns.Name, clusterName)
+		stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(stdout).To(ContainSubstring("1"))
+	})
+
+	// Test 13: Sidecar restart on crash
 	It("should restart pg_doorman after crash with backoff", func(ctx SpecContext) {
 		createClusterAndWait(ctx, cl, ns, "test-crash", "cr-crash")
 		podName := getPodName(ctx, cl, ns.Name, "test-crash")
@@ -395,7 +524,7 @@ var _ = Describe("pg_doorman pooler", func() {
 		By("waiting for wrapper to restart pg_doorman")
 		Eventually(func() string {
 			return getSidecarLogs(ctx, clientset, ns.Name, podName)
-		}).WithTimeout(2*time.Minute).WithPolling(10*time.Second).Should(
+		}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(
 			ContainSubstring("pg_doorman exited unexpectedly, restarting"),
 		)
 

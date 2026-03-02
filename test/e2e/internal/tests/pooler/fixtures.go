@@ -1,7 +1,12 @@
+//go:build e2e
+
 package pooler
 
 import (
+	machineryapi "github.com/cloudnative-pg/machinery/pkg/api"
+
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -77,4 +82,58 @@ func newCluster(namespace, name, configName string) *cnpgv1.Cluster {
 // newClusterWithMissingConfig creates a Cluster referencing a non-existent PgDoorman CR.
 func newClusterWithMissingConfig(namespace, name string) *cnpgv1.Cluster {
 	return newCluster(namespace, name, "non-existent-config")
+}
+
+// newClusterWithoutPlugin creates a Cluster with no pg-doorman plugin.
+func newClusterWithoutPlugin(namespace, name string) *cnpgv1.Cluster {
+	return &cnpgv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: cnpgv1.ClusterSpec{
+			Instances: 1,
+			Bootstrap: &cnpgv1.BootstrapConfiguration{
+				InitDB: &cnpgv1.BootstrapInitDB{
+					Database: "app",
+					Owner:    "app",
+				},
+			},
+			StorageConfiguration: cnpgv1.StorageConfiguration{
+				Size: "1Gi",
+			},
+		},
+	}
+}
+
+// newClusterWithInvalidParams creates a Cluster with invalid plugin parameters.
+func newClusterWithInvalidParams(namespace, name, configName string) *cnpgv1.Cluster {
+	c := newCluster(namespace, name, configName)
+	c.Spec.Plugins[0].Parameters["poolerPort"] = "not-a-number"
+	return c
+}
+
+// newPasswordSecret creates a Secret with a password key.
+func newPasswordSecret(namespace, name, password string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		StringData: map[string]string{
+			"password": password,
+		},
+	}
+}
+
+// newPgDoormanWithSecretRef creates a PgDoorman CR with admin password from a Secret.
+func newPgDoormanWithSecretRef(namespace, name, secretName string) *pgdoormanv1alpha1.PgDoorman {
+	cr := newPgDoorman(namespace, name)
+	cr.Spec.General.AdminPasswordSecretRef = &machineryapi.SecretKeySelector{
+		LocalObjectReference: machineryapi.LocalObjectReference{
+			Name: secretName,
+		},
+		Key: "password",
+	}
+	return cr
 }

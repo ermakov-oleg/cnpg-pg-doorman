@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/cloudnative-pg/cnpg-i/pkg/lifecycle"
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/decoder"
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/object"
+	"github.com/cloudnative-pg/cnpg-i/pkg/lifecycle"
 
 	"github.com/o-ermakov/cnpg-pg-doorman/internal/config"
 )
@@ -49,9 +49,12 @@ func (impl Implementation) LifecycleHook(
 	}
 
 	pluginConfig := config.NewFromCluster(cluster)
-	if err := pluginConfig.Validate(); err != nil {
-		slog.Info("plugin config invalid, skipping lifecycle", "error", err)
+	if !pluginConfig.Enabled {
 		return &lifecycle.OperatorLifecycleResponse{}, nil
+	}
+	if err := pluginConfig.Validate(); err != nil {
+		slog.Info("plugin config invalid, blocking lifecycle", "error", err)
+		return nil, err
 	}
 
 	switch kind {

@@ -28,24 +28,24 @@ CloudNativePG provides connection pooling through its `Pooler` CRD, which deploy
 ┌──────────────────────────────────────────────────────────────┐
 │ Kubernetes Cluster                                           │
 │                                                              │
-│  ┌─────────────────┐         ┌──────────────────────────┐   │
-│  │ CNPG Controller  │◄─gRPC─►│ pg-doorman Plugin Server  │   │
-│  │ Manager          │         │ (Deployment)              │   │
-│  └────────┬─────────┘         └──────────────────────────┘   │
+│  ┌─────────────────┐         ┌──────────────────────────┐    │
+│  │ CNPG Controller  │◄─gRPC─►│ pg-doorman Plugin Server │    │
+│  │ Manager          │        │ (Deployment)             │    │
+│  └────────┬─────────┘        └──────────────────────────┘    │
 │           │                                                  │
 │           │ manages                                          │
 │           ▼                                                  │
-│  ┌──────────────────────────────────────────────┐            │
-│  │ PostgreSQL Pod                                │            │
-│  │                                               │            │
-│  │  Client ──► :6432 (pg_doorman) ──► :5432 (PG) │            │
-│  │              ▲                                 │            │
-│  │              │ config reload (SIGHUP)          │            │
-│  │              │                                 │            │
-│  │         doorman-wrapper                        │            │
-│  │              ▲                                 │            │
-│  └──────────────┼────────────────────────────────┘            │
-│                 │ watches                                     │
+│  ┌───────────────────────────────────────────────┐           │
+│  │ PostgreSQL Pod                                │           │
+│  │                                               │           │
+│  │  Client ──► :6432 (pg_doorman) ──► :5432 (PG) │           │
+│  │              ▲                                │           │
+│  │              │ config reload (SIGHUP)         │           │
+│  │              │                                │           │
+│  │         doorman-wrapper                       │           │
+│  │              ▲                                │           │
+│  └──────────────┼────────────────────────────────┘           │
+│                 │ watches                                    │
 │           ┌─────┴──────┐                                     │
 │           │ PgDoorman  │                                     │
 │           │ CR         │                                     │
