@@ -14,11 +14,9 @@ images:
   - name: pg-doorman-plugin
     newName: pg-doorman-plugin
     newTag: testing
-patches:
-  - target:
-      kind: Deployment
-      name: pg-doorman
-    patch: |-
-      - op: replace
-        path: /spec/template/spec/containers/0/env/0/value
-        value: pg-doorman-wrapper:testing
+secretGenerator:
+  - name: pg-doorman
+    literals:
+      - SIDECAR_IMAGE=pg-doorman-wrapper:testing
+    options:
+      disableNameSuffixHash: true

@@ -35,7 +35,10 @@ spec:
               protocol: TCP
           env:
             - name: SIDECAR_IMAGE
-              value: pg-doorman-wrapper:latest
+              valueFrom:
+                secretKeyRef:
+                  name: pg-doorman
+                  key: SIDECAR_IMAGE
           readinessProbe:
             tcpSocket:
               port: 9090
