@@ -34,3 +34,7 @@ test/e2e/bin
 
 # Claude
 .claude
+
+# Generated manifests
+manifest.yaml
+manifest-build/
