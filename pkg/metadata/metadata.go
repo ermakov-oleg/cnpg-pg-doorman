@@ -8,7 +8,7 @@ const PluginName = "pg-doorman.cnpg.io"
 
 var Data = identity.GetPluginMetadataResponse{
 	Name:          PluginName,
-	Version:       "0.1.0", // x-release-please-version
+	Version:       "0.2.0", // x-release-please-version
 	DisplayName:   "PgDoorman",
 	ProjectUrl:    "https://github.com/o-ermakov/cnpg-pg-doorman",
 	RepositoryUrl: "https://github.com/o-ermakov/cnpg-pg-doorman",
