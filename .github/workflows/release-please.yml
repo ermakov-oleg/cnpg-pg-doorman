@@ -1,0 +1,52 @@
+name: release-please
+
+on:
+  push:
+    branches:
+      - main
+
+permissions: read-all
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Install QEMU static binaries
+        uses: docker/setup-qemu-action@v3
+      - name: Install Task
+        uses: arduino/setup-task@v2
+      - name: Install Dagger
+        env:
+          DAGGER_VERSION: 0.19.10
+        run: |
+          curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+      - name: Create image and manifest
+        env:
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          task publish
+          task manifest
+      - name: Attach manifest to workflow run
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifest.yaml
+          path: ./manifest.yaml
+      - name: Run release-please
+        run: |
+          npx release-please release-pr \
+            --token="${{ secrets.GITHUB_TOKEN }}" \
+            --repo-url="${{ github.repository }}"
+          npx release-please github-release \
+            --token="${{ secrets.GITHUB_TOKEN }}" \
+            --repo-url="${{ github.repository }}"
