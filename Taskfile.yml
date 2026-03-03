@@ -135,7 +135,7 @@ tasks:
     vars:
       PLUGIN_IMAGE_NAME: ghcr.io/{{.GITHUB_REPOSITORY}}{{if not (hasPrefix "refs/tags/v" .GITHUB_REF)}}-testing{{end}}
       WRAPPER_IMAGE_NAME: ghcr.io/{{.GITHUB_REPOSITORY}}-wrapper{{if not (hasPrefix "refs/tags/v" .GITHUB_REF)}}-testing{{end}}
-      IMAGE_VERSION: '{{regexReplaceAll "(\d+)/merge" .GITHUB_REF_NAME "pr-${1}"}}'
+      IMAGE_VERSION: '{{regexReplaceAll "(\\d+)/merge" .GITHUB_REF_NAME "pr-${1}"}}'
     env:
       # renovate: datasource=git-refs depName=docker lookupName=https://github.com/purpleclay/daggerverse currentValue=main
       DAGGER_DOCKER_SHA: ee12c1a4a2630e194ec20c5a9959183e3a78c192
@@ -178,7 +178,7 @@ tasks:
     vars:
       PLUGIN_IMAGE_NAME: ghcr.io/{{.GITHUB_REPOSITORY}}{{if not (hasPrefix "refs/tags/v" .GITHUB_REF)}}-testing{{end}}
       WRAPPER_IMAGE_NAME: ghcr.io/{{.GITHUB_REPOSITORY}}-wrapper{{if not (hasPrefix "refs/tags/v" .GITHUB_REF)}}-testing{{end}}
-      IMAGE_VERSION: '{{regexReplaceAll "(\d+)/merge" .GITHUB_REF_NAME "pr-${1}"}}'
+      IMAGE_VERSION: '{{regexReplaceAll "(\\d+)/merge" .GITHUB_REF_NAME "pr-${1}"}}'
     env:
       # renovate: datasource=git-refs depName=kustomize lookupName=https://github.com/sagikazarmark/daggerverse currentValue=main
       DAGGER_KUSTOMIZE_SHA: 5dcc7e4c4cd5ed230046955f42e27f2166545155
