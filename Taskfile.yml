@@ -168,6 +168,7 @@ tasks:
 
   manifest-internal:
     desc: Build kustomize manifest with correct image tags
+    label: manifest-internal-{{.GITHUB_REF_NAME}}
     internal: true
     requires:
       vars:

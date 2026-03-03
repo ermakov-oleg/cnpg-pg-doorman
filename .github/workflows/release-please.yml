@@ -16,7 +16,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Install node
         uses: actions/setup-node@v6
         with:
@@ -27,9 +27,11 @@ jobs:
         uses: arduino/setup-task@v2
       - name: Install Dagger
         env:
+          # renovate: datasource=github-tags depName=dagger/dagger versioning=semver
           DAGGER_VERSION: 0.19.10
         run: |
           curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
       - name: Create image and manifest
         env:
           REGISTRY_USER: ${{ github.actor }}
@@ -38,15 +40,15 @@ jobs:
           task publish
           task manifest
       - name: Attach manifest to workflow run
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: manifest.yaml
           path: ./manifest.yaml
       - name: Run release-please
         run: |
           npx release-please release-pr \
-            --token="${{ secrets.GITHUB_TOKEN }}" \
+            --token="${{ secrets.REPO_PAT }}" \
             --repo-url="${{ github.repository }}"
           npx release-please github-release \
-            --token="${{ secrets.GITHUB_TOKEN }}" \
+            --token="${{ secrets.REPO_PAT }}" \
             --repo-url="${{ github.repository }}"
