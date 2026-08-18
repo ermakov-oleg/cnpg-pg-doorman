@@ -2,7 +2,7 @@ version: 3
 
 vars:
   # renovate: datasource=docker depName=kindest/node
-  E2E_KUBERNETES_VERSION: v1.35.0
+  E2E_KUBERNETES_VERSION: v1.36.1
   KIND_CLUSTER_NAME: pg-doorman-e2e
   PLUGIN_IMAGE: pg-doorman-plugin:testing
   WRAPPER_IMAGE: pg-doorman-wrapper:testing
