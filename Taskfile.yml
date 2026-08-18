@@ -203,7 +203,7 @@ tasks:
         - GITHUB_REF_NAME
         - GITHUB_TOKEN
     env:
-      # renovate: datasource=git-refs depName=gh lookupName=https://github.com/sagikazarmark/daggerverse
+      # renovate: datasource=git-refs depName=gh lookupName=https://github.com/sagikazarmark/daggerverse currentValue=main
       DAGGER_GH_SHA: 5dcc7e4c4cd5ed230046955f42e27f2166545155
     preconditions:
       - sh: "[[ {{.GITHUB_REF}} =~ 'refs/tags/v.*' ]]"

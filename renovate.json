@@ -1,0 +1,28 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "docker:pinDigests"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/\\.github/workflows/.+\\.ya?ml$/",
+        "/^Taskfile\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)(?: versioning=(?<versioning>[a-z-]+))?\\s+\\w+:\\s*(?<currentValue>\\d[^\\s]*)",
+        "# renovate: datasource=(?<datasource>git-refs) depName=(?<depName>[^\\s]+) lookupName=(?<packageName>[^\\s]+) currentValue=(?<currentValue>[^\\s]+)\\s+\\w+:\\s*(?<currentDigest>[a-f0-9]{40})"
+      ]
+    }
+  ],
+  "packageRules": [
+    {
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/ozontech/pg_doorman"],
+      "matchUpdateTypes": ["major", "minor"],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}
