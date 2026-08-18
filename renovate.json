@@ -12,7 +12,7 @@
         "/^Taskfile\\.ya?ml$/"
       ],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)(?: versioning=(?<versioning>[a-z-]+))?\\s+\\w+:\\s*(?<currentValue>\\d[^\\s]*)",
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>[^\\s]+)(?: versioning=(?<versioning>[a-z-]+))?(?: extractVersion=(?<extractVersion>[^\\s]+))?\\s+\\w+:\\s*\"?(?<currentValue>v?\\d[^\\s\"]*)\"?",
         "# renovate: datasource=(?<datasource>git-refs) depName=(?<depName>[^\\s]+) lookupName=(?<packageName>[^\\s]+) currentValue=(?<currentValue>[^\\s]+)\\s+\\w+:\\s*(?<currentDigest>[a-f0-9]{40})"
       ]
     }

@@ -1,11 +1,14 @@
 version: 3
 
 vars:
+  # renovate: datasource=docker depName=kindest/node
   E2E_KUBERNETES_VERSION: v1.35.0
   KIND_CLUSTER_NAME: pg-doorman-e2e
   PLUGIN_IMAGE: pg-doorman-plugin:testing
   WRAPPER_IMAGE: pg-doorman-wrapper:testing
+  # renovate: datasource=github-releases depName=cert-manager/cert-manager
   CERT_MANAGER_VERSION: v1.17.2
+  # renovate: datasource=github-releases depName=cloudnative-pg/cloudnative-pg extractVersion=^v(?<version>.*)$
   CNPG_VERSION: "1.28.0"
 
 tasks:
