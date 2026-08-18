@@ -5,7 +5,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-
 // PgDoormanSpec defines the desired state of PgDoorman.
 type PgDoormanSpec struct {
 	// Pools defines the connection pools.
