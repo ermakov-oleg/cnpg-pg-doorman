@@ -170,7 +170,7 @@ Parameters passed via `spec.plugins[].parameters` in the CNPG Cluster:
 | Field             | Default       | Description                                |
 | ----------------- | ------------- | ------------------------------------------ |
 | `poolMode`        | `transaction` | Pooling mode (`transaction` or `session`)  |
-| `defaultPoolSize` | `40`          | Default pool size for auth_query users     |
+| `defaultPoolSize` | `40`          | Data pool size per auth_query user (`auth_query.pool_size`) |
 | `authQuery`       | —             | Auth query configuration (see below)       |
 | `users`           | —             | Static user credentials list (see below)   |
 
@@ -181,7 +181,7 @@ Parameters passed via `spec.plugins[].parameters` in the CNPG Cluster:
 | `user`               | —                                                    | **Required.** PostgreSQL user for auth queries |
 | `query`              | `SELECT * FROM public.doorman_auth_query($1)` | SQL query for authentication           |
 | `database`           | `postgres`                                           | Database to run auth queries against   |
-| `poolSize`           | `2`                                                  | Pool size for the auth user connection |
+| `poolSize`           | `2`                                                  | Executor connections for auth queries (`auth_query.workers`) |
 | `passwordSecretRef`  | —                                                    | Secret reference for auth user password |
 
 #### Static User (`spec.pools.<db>.users[]`)

@@ -56,12 +56,12 @@ func Generate(spec *v1alpha1.PgDoormanSpec, poolerPort, metricsPort int, passwor
 		if pool.AuthQuery != nil {
 			aq := pool.AuthQuery
 			pc.AuthQuery = &wrapper.AuthQueryConfig{
-				Query:           aq.Query,
-				User:            aq.User,
-				Password:        passwords[PasswordKey(poolName, "auth_query", aq.User)],
-				Database:        aq.Database,
-				PoolSize:        *aq.PoolSize,
-				DefaultPoolSize: *pool.DefaultPoolSize,
+				Query:    aq.Query,
+				User:     aq.User,
+				Password: passwords[PasswordKey(poolName, "auth_query", aq.User)],
+				Database: aq.Database,
+				Workers:  *aq.PoolSize,
+				PoolSize: *pool.DefaultPoolSize,
 			}
 		}
 

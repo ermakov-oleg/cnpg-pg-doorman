@@ -213,6 +213,22 @@ var _ = Describe("pg_doorman pooler", func() {
 			"SELECT owner FROM test_auth LIMIT 1")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stdout).To(ContainSubstring("app"))
+
+		By("verifying dynamic user data pool size matches defaultPoolSize via admin console")
+		stdout, _, err = psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName,
+			pgdoormanv1alpha1.DefaultAdminPassword, pgdoormanv1alpha1.DefaultAdminUsername, "pgdoorman", "SHOW DATABASES")
+		Expect(err).NotTo(HaveOccurred())
+		// -tA rows: name|host|port|database|force_user|pool_size|min_pool_size|reserve_pool|pool_mode|max_connections|current_connections
+		appPoolFound := false
+		for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+			fields := strings.Split(line, "|")
+			if len(fields) > 5 && fields[4] == "app" {
+				appPoolFound = true
+				Expect(fields[5]).To(Equal(fmt.Sprint(pgdoormanv1alpha1.DefaultDefaultPoolSize)),
+					"dynamic user pool must use defaultPoolSize (auth_query.pool_size), not the executor pool size")
+			}
+		}
+		Expect(appPoolFound).To(BeTrue(), "expected a pool row for dynamic user 'app' in SHOW DATABASES: "+stdout)
 	})
 
 	// Test 4: Transaction pooling
