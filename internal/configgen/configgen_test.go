@@ -66,8 +66,11 @@ func TestGenerate_MinimalAuthQuery(t *testing.T) {
 	if pool.AuthQuery.Query != v1alpha1.DefaultAuthQueryQuery {
 		t.Errorf("expected default query, got %q", pool.AuthQuery.Query)
 	}
-	if pool.AuthQuery.DefaultPoolSize != 40 {
-		t.Errorf("expected default_pool_size 40, got %d", pool.AuthQuery.DefaultPoolSize)
+	if pool.AuthQuery.PoolSize != 40 {
+		t.Errorf("expected pool_size 40, got %d", pool.AuthQuery.PoolSize)
+	}
+	if pool.AuthQuery.Workers != 2 {
+		t.Errorf("expected workers 2, got %d", pool.AuthQuery.Workers)
 	}
 
 	if cfg.Prometheus == nil {
@@ -78,6 +81,42 @@ func TestGenerate_MinimalAuthQuery(t *testing.T) {
 	}
 	if cfg.Prometheus.Port != 9127 {
 		t.Errorf("expected prometheus port 9127, got %d", cfg.Prometheus.Port)
+	}
+}
+
+func TestGenerate_AuthQueryKeysMatchUpstream(t *testing.T) {
+	spec := &v1alpha1.PgDoormanSpec{
+		Pools: map[string]v1alpha1.PoolSpec{
+			"app": {
+				DefaultPoolSize: ptr.To(40),
+				AuthQuery: &v1alpha1.AuthQuerySpec{
+					User:     "doorman_auth",
+					PoolSize: ptr.To(5),
+				},
+			},
+		},
+	}
+
+	data, err := Generate(spec, 6432, 9127, nil)
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	var raw map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	aq := raw["pools"].(map[string]any)["app"].(map[string]any)["auth_query"].(map[string]any)
+
+	// pg_doorman v3.11.0 (upstream PR #148): workers = executor connections, pool_size = dynamic user data pool
+	if got := aq["workers"]; got != 5 {
+		t.Errorf("expected auth_query.workers 5, got %v", got)
+	}
+	if got := aq["pool_size"]; got != 40 {
+		t.Errorf("expected auth_query.pool_size 40, got %v", got)
+	}
+	if _, ok := aq["default_pool_size"]; ok {
+		t.Error("auth_query.default_pool_size must not be written: key removed in pg_doorman v3.11.0")
 	}
 }
 

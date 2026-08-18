@@ -42,12 +42,13 @@ type UserConfig struct {
 }
 
 type AuthQueryConfig struct {
-	Query           string `yaml:"query"`
-	User            string `yaml:"user"`
-	Password        string `yaml:"password"`
-	Database        string `yaml:"database"`
+	Query    string `yaml:"query"`
+	User     string `yaml:"user"`
+	Password string `yaml:"password"`
+	Database string `yaml:"database"`
+	// workers = executor connections, pool_size = per-user data pool
+	Workers         int    `yaml:"workers"`
 	PoolSize        int    `yaml:"pool_size"`
-	DefaultPoolSize int    `yaml:"default_pool_size"`
 	CacheTTL        string `yaml:"cache_ttl,omitempty"`
 	CacheFailureTTL string `yaml:"cache_failure_ttl,omitempty"`
 	MinInterval     string `yaml:"min_interval,omitempty"`

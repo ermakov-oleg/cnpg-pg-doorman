@@ -118,8 +118,9 @@ spec:
                           - name
                           type: object
                         poolSize:
-                          description: 'PoolSize is the pool size for the auth user
-                            (default: 2).'
+                          description: |-
+                            PoolSize is the number of executor connections running auth queries (default: 2).
+                            Maps to auth_query.workers.
                           type: integer
                         query:
                           description: 'Query is the SQL query (default: "SELECT *
@@ -132,8 +133,9 @@ spec:
                       - user
                       type: object
                     defaultPoolSize:
-                      description: 'DefaultPoolSize is the default pool size for auth_query
-                        users (default: 40).'
+                      description: |-
+                        DefaultPoolSize is the data pool size per auth_query user (default: 40).
+                        Maps to auth_query.pool_size.
                       type: integer
                     poolMode:
                       description: 'PoolMode is the pooling mode (default: "transaction").'
