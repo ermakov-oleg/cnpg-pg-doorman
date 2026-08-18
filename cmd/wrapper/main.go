@@ -110,7 +110,9 @@ func main() {
 
 	// Start pg_doorman with restart
 	proc := wrapper.NewProcess(runtimeConfig, logger)
+	procDone := make(chan struct{})
 	go func() {
+		defer close(procDone)
 		if err := proc.RunWithRestart(ctx); err != nil && ctx.Err() == nil {
 			logger.Error("pg_doorman run failed", "error", err)
 			os.Exit(1)
@@ -122,8 +124,10 @@ func main() {
 	go w.Run(ctx, pollIntervalSec)
 
 	<-ctx.Done()
-	logger.Info("shutting down")
-	_ = proc.Stop()
+	logger.Info("shutting down, waiting for pg_doorman to exit")
+	// wrapper — PID 1: выход main убьёт контейнер вместе с pg_doorman,
+	// поэтому ждём, пока RunWithRestart дождётся выхода процесса.
+	<-procDone
 }
 
 func makeConfigGenerator(cl client.Client, namespace string, poolerPort, metricsPort int) wrapper.ConfigGenerator {
