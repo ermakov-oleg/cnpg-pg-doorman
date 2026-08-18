@@ -41,8 +41,8 @@ func NewProcess(configPath string, logger *slog.Logger) *Process {
 	}
 }
 
-// waitDelay ограничивает ожидание выхода pg_doorman после SIGTERM:
-// shutdown_timeout из конфига (или дефолт) плюс запас, дальше SIGKILL.
+// waitDelay bounds how long to wait for pg_doorman to exit after SIGTERM:
+// shutdown_timeout from the config (or the default) plus a margin, then SIGKILL.
 func (p *Process) waitDelay() time.Duration {
 	timeout := defaultShutdownTimeout
 	if data, err := os.ReadFile(p.configPath); err == nil {
@@ -63,7 +63,7 @@ func (p *Process) Start(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, p.binary, p.configPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	// Дефолтный Cancel шлёт SIGKILL — pg_doorman не успевает закрыть клиентские соединения.
+	// The default Cancel sends SIGKILL — pg_doorman gets no chance to close client connections.
 	cmd.Cancel = func() error {
 		p.logger.Info("sending SIGTERM to pg_doorman", "pid", cmd.Process.Pid)
 		return cmd.Process.Signal(syscall.SIGTERM)
@@ -102,8 +102,8 @@ func (p *Process) Reload() error {
 	return p.cmd.Process.Signal(syscall.SIGHUP)
 }
 
-// RunWithRestart запускает pg_doorman и перезапускает при crash с exponential backoff.
-// Останавливается при отмене контекста.
+// RunWithRestart runs pg_doorman and restarts it on crash with exponential backoff.
+// Stops when the context is canceled.
 func (p *Process) RunWithRestart(ctx context.Context) error {
 	backoff := initialBackoff
 

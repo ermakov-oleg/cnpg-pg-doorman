@@ -125,8 +125,8 @@ func main() {
 
 	<-ctx.Done()
 	logger.Info("shutting down, waiting for pg_doorman to exit")
-	// wrapper — PID 1: выход main убьёт контейнер вместе с pg_doorman,
-	// поэтому ждём, пока RunWithRestart дождётся выхода процесса.
+	// The wrapper is PID 1: exiting main kills the container along with pg_doorman,
+	// so wait until RunWithRestart observes the process exit.
 	<-procDone
 }
 
