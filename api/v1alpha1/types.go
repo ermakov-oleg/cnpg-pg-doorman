@@ -150,7 +150,3 @@ type PgDoormanList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []PgDoorman `json:"items"`
 }
-
-func init() {
-	SchemeBuilder.Register(&PgDoorman{}, &PgDoormanList{})
-}
