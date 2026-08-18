@@ -120,7 +120,7 @@ spec:
                         poolSize:
                           description: |-
                             PoolSize is the number of executor connections running auth queries (default: 2).
-                            Maps to auth_query.workers in pg_doorman >= v3.11.0.
+                            Maps to auth_query.workers.
                           type: integer
                         query:
                           description: 'Query is the SQL query (default: "SELECT *
@@ -135,7 +135,7 @@ spec:
                     defaultPoolSize:
                       description: |-
                         DefaultPoolSize is the data pool size per auth_query user (default: 40).
-                        Maps to auth_query.pool_size in pg_doorman >= v3.11.0.
+                        Maps to auth_query.pool_size.
                       type: integer
                     poolMode:
                       description: 'PoolMode is the pooling mode (default: "transaction").'

@@ -72,7 +72,7 @@ User updates ConfigMap → K8s propagates volume (~60s) → Wrapper detects chan
 | Настройка конфига | Что ограничивает | Default |
 |-------------------|-----------------|---------|
 | `general.max_connections` | Client → pg_doorman (макс клиентов) | 8192 |
-| `auth_query.pool_size` (до v3.11.0 — `default_pool_size`) | pg_doorman → PostgreSQL (пул на пользователя) | 40 |
+| `auth_query.default_pool_size` | pg_doorman → PostgreSQL (пул на пользователя) | 100 |
 
 ### Auth query (passthrough):
 - **Executor**: спец. роль (`doorman_auth`) подключается к PG для `SELECT passwd FROM pg_shadow`

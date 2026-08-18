@@ -27,7 +27,7 @@ type PoolSpec struct {
 	PoolMode string `json:"poolMode,omitempty"`
 
 	// DefaultPoolSize is the data pool size per auth_query user (default: 40).
-	// Maps to auth_query.pool_size in pg_doorman >= v3.11.0.
+	// Maps to auth_query.pool_size.
 	// +optional
 	DefaultPoolSize *int `json:"defaultPoolSize,omitempty"`
 
@@ -59,7 +59,7 @@ type AuthQuerySpec struct {
 	Database string `json:"database,omitempty"`
 
 	// PoolSize is the number of executor connections running auth queries (default: 2).
-	// Maps to auth_query.workers in pg_doorman >= v3.11.0.
+	// Maps to auth_query.workers.
 	// +optional
 	PoolSize *int `json:"poolSize,omitempty"`
 }
