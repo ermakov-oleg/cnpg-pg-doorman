@@ -14,6 +14,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
 	"github.com/o-ermakov/cnpg-pg-doorman/internal/configgen"
@@ -44,6 +45,7 @@ func main() {
 	namespace := os.Getenv("PG_DOORMAN_CONFIG_NAMESPACE")
 	poolerPort := envInt("POOLER_PORT", 6432, logger)
 	metricsPort := envInt("METRICS_PORT", 9127, logger)
+	healthPort := envInt("HEALTH_PORT", 8081, logger)
 
 	if configName == "" {
 		logger.Error("PG_DOORMAN_CONFIG_NAME is required")
@@ -56,7 +58,8 @@ func main() {
 
 	// Create k8s client with DisableFor (no informers) + ExtendedClient TTL cache
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme: scheme,
+		Scheme:                 scheme,
+		HealthProbeBindAddress: ":" + strconv.Itoa(healthPort),
 		Client: client.Options{
 			Cache: &client.CacheOptions{
 				DisableFor: []client.Object{
@@ -68,6 +71,13 @@ func main() {
 	})
 	if err != nil {
 		logger.Error("unable to create manager", "error", err)
+		os.Exit(1)
+	}
+
+	// The kubelet liveness probe targets this endpoint: it reflects wrapper
+	// liveness only, never pg_doorman state (see internal/lifecycle).
+	if err := mgr.AddHealthzCheck("ping", healthz.Ping); err != nil {
+		logger.Error("unable to add healthz check", "error", err)
 		os.Exit(1)
 	}
 

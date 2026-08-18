@@ -20,6 +20,10 @@ const (
 	sidecarContainerName = "pg-doorman"
 	scratchVolumeName    = "pg-doorman-scratch"
 	scratchMountPath     = "/tmp"
+	// wrapperHealthPort serves the wrapper's own /healthz, independent of
+	// pg_doorman state: probing the pooler port kills the container while the
+	// wrapper legitimately waits for its config.
+	wrapperHealthPort = 8081
 )
 
 func reconcilePod(
@@ -77,6 +81,7 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluste
 			{Name: "PG_DOORMAN_CONFIG_NAMESPACE", Value: clusterNamespace},
 			{Name: "POOLER_PORT", Value: strconv.Itoa(cfg.PoolerPort)},
 			{Name: "METRICS_PORT", Value: strconv.Itoa(cfg.MetricsPort)},
+			{Name: "HEALTH_PORT", Value: strconv.Itoa(wrapperHealthPort)},
 		},
 		VolumeMounts: []corev1.VolumeMount{
 			{
@@ -94,19 +99,15 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluste
 				corev1.ResourceMemory: resource.MustParse("256Mi"),
 			},
 		},
-		ReadinessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				TCPSocket: &corev1.TCPSocketAction{
-					Port: intstr.FromInt32(int32(cfg.PoolerPort)),
-				},
-			},
-			InitialDelaySeconds: 5,
-			PeriodSeconds:       10,
-		},
+		// No readiness probe: native sidecar readiness gates readiness of the
+		// whole pod, so a broken pooler would drop a healthy PostgreSQL from
+		// all Service endpoints (-rw/-ro/-r) and stall rolling updates.
+		// No startup probe: it would block the PostgreSQL container start.
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
-				TCPSocket: &corev1.TCPSocketAction{
-					Port: intstr.FromInt32(int32(cfg.PoolerPort)),
+				HTTPGet: &corev1.HTTPGetAction{
+					Path: "/healthz",
+					Port: intstr.FromInt32(wrapperHealthPort),
 				},
 			},
 			InitialDelaySeconds: 10,
