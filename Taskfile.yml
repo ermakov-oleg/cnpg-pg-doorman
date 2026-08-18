@@ -7,7 +7,7 @@ vars:
   PLUGIN_IMAGE: pg-doorman-plugin:testing
   WRAPPER_IMAGE: pg-doorman-wrapper:testing
   # renovate: datasource=github-releases depName=cert-manager/cert-manager
-  CERT_MANAGER_VERSION: v1.17.2
+  CERT_MANAGER_VERSION: v1.21.1
   # renovate: datasource=github-releases depName=cloudnative-pg/cloudnative-pg extractVersion=^v(?<version>.*)$
   CNPG_VERSION: "1.28.0"
 
