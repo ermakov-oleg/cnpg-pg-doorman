@@ -27,8 +27,8 @@ func Generate(spec *v1alpha1.PgDoormanSpec, poolerPort, metricsPort int, passwor
 			Port:            poolerPort,
 			AdminUsername:   applied.General.AdminUsername,
 			AdminPassword:   adminPassword,
-			WorkerThreads:   *applied.General.WorkerThreads,
-			MaxConnections:  *applied.General.MaxConnections,
+			WorkerThreads:   applied.General.WorkerThreads,
+			MaxConnections:  applied.General.MaxConnections,
 			ConnectTimeout:  applied.General.ConnectTimeout,
 			IdleTimeout:     applied.General.IdleTimeout,
 			ServerLifetime:  applied.General.ServerLifetime,
@@ -60,8 +60,8 @@ func Generate(spec *v1alpha1.PgDoormanSpec, poolerPort, metricsPort int, passwor
 				User:     aq.User,
 				Password: passwords[PasswordKey(poolName, "auth_query", aq.User)],
 				Database: aq.Database,
-				Workers:  *aq.PoolSize,
-				PoolSize: *pool.DefaultPoolSize,
+				Workers:  aq.PoolSize,
+				PoolSize: pool.DefaultPoolSize,
 			}
 		}
 
@@ -69,7 +69,7 @@ func Generate(spec *v1alpha1.PgDoormanSpec, poolerPort, metricsPort int, passwor
 			pc.Users = append(pc.Users, wrapper.UserConfig{
 				Username: user.Username,
 				Password: passwords[PasswordKey(poolName, "user", user.Username)],
-				PoolSize: *user.PoolSize,
+				PoolSize: user.PoolSize,
 			})
 		}
 
