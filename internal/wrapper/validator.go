@@ -1,11 +1,39 @@
 package wrapper
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+// ConfigTester validates a config file, typically with the real pg_doorman
+// binary: the Go-side structural check cannot know which values pg_doorman
+// itself will reject.
+type ConfigTester func(ctx context.Context, path string) error
+
+const binaryTestTimeout = 10 * time.Second
+
+// CandidateSuffix names the not-yet-accepted config next to the runtime file.
+// It must keep a .yaml extension: pg_doorman detects the config format from
+// the file extension and would parse anything else as TOML.
+const CandidateSuffix = ".next.yaml"
+
+// NewBinaryConfigTester returns a ConfigTester running `binary <path> --test-config`.
+func NewBinaryConfigTester(binary string) ConfigTester {
+	return func(ctx context.Context, path string) error {
+		ctx, cancel := context.WithTimeout(ctx, binaryTestTimeout)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, binary, path, "--test-config").CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("pg_doorman --test-config failed: %w: %s", err, out)
+		}
+		return nil
+	}
+}
 
 // DoormanConfig is a minimal pg_doorman config structure for validation.
 type DoormanConfig struct {
