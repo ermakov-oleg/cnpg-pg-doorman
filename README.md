@@ -14,14 +14,13 @@ CloudNativePG provides connection pooling through its `Pooler` CRD, which deploy
 ## Features
 
 - **Automatic sidecar injection** — pg_doorman is injected into PostgreSQL pods via CNPG plugin lifecycle hooks
-- **CRD-based configuration** — pooler settings are managed through the `PgDoorman` custom resource
-- **Hot-reload** — configuration changes are applied without pod restarts (via SIGHUP)
+- **CRD-based configuration** — pooler settings are managed through the `PgDoorman` custom resource; the plugin renders them centrally into a per-cluster Secret, so PostgreSQL pods need zero RBAC
+- **Hot-reload** — configuration changes are applied without pod restarts (via SIGHUP; non-reloadable fields trigger a graceful in-place process restart)
 - **Dynamic authentication** — reuses PostgreSQL password verification via `auth_query`
 - **Static user credentials** — passwords can be referenced from Kubernetes Secrets
 - **Transaction & session pool modes** — configurable per database pool
 - **Client TLS** — pg_doorman terminates TLS on the pooler port using the CNPG server certificate, so `sslmode=verify-full` clients work through the pooler
 - **Prometheus metrics** — built-in metrics endpoint for monitoring
-- **Automatic RBAC management** — the plugin creates necessary Roles and RoleBindings for the wrapper sidecar
 
 ## Architecture
 
@@ -46,10 +45,15 @@ CloudNativePG provides connection pooling through its `Pooler` CRD, which deploy
 │  │         doorman-wrapper                       │           │
 │  │              ▲                                │           │
 │  └──────────────┼────────────────────────────────┘           │
-│                 │ watches                                    │
-│           ┌─────┴──────┐                                     │
-│           │ PgDoorman  │                                     │
-│           │ CR         │                                     │
+│                 │ mounts                                     │
+│        ┌────────┴─────────────┐      renders                 │
+│        │ <cluster>-doorman-   │◄─────────────┐               │
+│        │ config Secret        │              │               │
+│        └──────────────────────┘   ┌──────────┴───────────┐   │
+│                                   │ Plugin controller    │   │
+│           ┌────────────┐ watches  │ (leader-elected)     │   │
+│           │ PgDoorman  │◄─────────┤                      │   │
+│           │ CR         │          └──────────────────────┘   │
 │           └────────────┘                                     │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -97,6 +101,10 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: my-cluster-doorman-auth
+  labels:
+    # Required: the render controller only accepts secrets labeled as
+    # belonging to the cluster (confused-deputy guard).
+    cnpg.io/cluster: my-cluster
 type: kubernetes.io/basic-auth
 stringData:
   username: doorman_auth
@@ -188,6 +196,11 @@ See the [examples/](examples/) directory for more configuration samples.
 pg_doorman listens on port `6432` inside each PostgreSQL pod. The standard CNPG Services still point to PostgreSQL on port `5432`. The plugin automatically creates a `<cluster>-doorman-rw` Service (port `5432`, targeting the pooler on the primary instance), so clients connect to it as a drop-in replacement for `<cluster>-rw`.
 
 For in-pod communication (e.g. from application sidecars), connect to `localhost:6432`.
+
+> **Propagation latency**: configuration changes reach pods via the kubelet's
+> Secret volume sync, typically within ~1 minute (vs. instant API reads in the
+> pre-rendered architecture). In exchange, PostgreSQL pods hold no Kubernetes
+> credentials at all.
 
 > **Failover behavior**: when an instance is demoted (failover/switchover), the
 > wrapper gracefully restarts pg_doorman on that pod to drop long-lived client

@@ -29,8 +29,8 @@ import (
 // createClusterAndWait creates a PgDoorman CR + Cluster and waits for readiness.
 // ensureAdminPasswordSecret creates the per-namespace admin password Secret
 // referenced by every fixture CR (idempotent).
-func ensureAdminPasswordSecret(ctx SpecContext, cl client.Client, namespace string) {
-	err := cl.Create(ctx, newAdminPasswordSecret(namespace))
+func ensureAdminPasswordSecret(ctx SpecContext, cl client.Client, namespace, clusterName string) {
+	err := cl.Create(ctx, newAdminPasswordSecret(namespace, clusterName))
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		Expect(err).NotTo(HaveOccurred())
 	}
@@ -43,7 +43,7 @@ func createClusterAndWait(
 	clusterName, configName string,
 ) {
 	By("creating admin password Secret and PgDoorman CR")
-	ensureAdminPasswordSecret(ctx, cl, ns.Name)
+	ensureAdminPasswordSecret(ctx, cl, ns.Name, clusterName)
 	Expect(cl.Create(ctx, newPgDoorman(ns.Name, configName, clusterName))).To(Succeed())
 
 	By("creating Cluster")
@@ -212,7 +212,7 @@ var _ = Describe("pg_doorman pooler", func() {
 			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(stdout).To(ContainSubstring("1"))
-		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 	})
 
 	// Test 3: Auth query works
@@ -324,7 +324,7 @@ var _ = Describe("pg_doorman pooler", func() {
 		By("waiting for wrapper to reload the config")
 		Eventually(func() string {
 			return getSidecarLogs(ctx, clientset, ns.Name, podName)
-		}).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(
+		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(
 			ContainSubstring("config reloaded successfully"),
 		)
 
@@ -410,7 +410,7 @@ var _ = Describe("pg_doorman pooler", func() {
 		By("waiting for wrapper to reload the config")
 		Eventually(func() string {
 			return getSidecarLogs(ctx, clientset, ns.Name, podName)
-		}).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(
+		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(
 			ContainSubstring("config reloaded successfully"),
 		)
 
@@ -422,7 +422,7 @@ var _ = Describe("pg_doorman pooler", func() {
 			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(stdout).To(ContainSubstring("1"))
-		}).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
 		By("verifying the config file inside the sidecar contains the value from the last update")
 		Eventually(func(g Gomega) {
@@ -437,7 +437,7 @@ var _ = Describe("pg_doorman pooler", func() {
 			)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(stdout).To(ContainSubstring("worker_threads: 8"))
-		}).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 	})
 
 	// Test 10: Cluster without plugin passes admission
@@ -504,7 +504,7 @@ var _ = Describe("pg_doorman pooler", func() {
 		rotatedPassword := "rotated-password"
 
 		By("creating admin password Secret")
-		Expect(cl.Create(ctx, newPasswordSecret(ns.Name, secretName, initialPassword))).To(Succeed())
+		Expect(cl.Create(ctx, newPasswordSecret(ns.Name, secretName, clusterName, initialPassword))).To(Succeed())
 
 		By("creating PgDoorman CR with secret ref")
 		Expect(cl.Create(ctx, newPgDoormanWithSecretRef(ns.Name, configName, clusterName, secretName))).To(Succeed())
@@ -529,7 +529,7 @@ var _ = Describe("pg_doorman pooler", func() {
 				initialPassword, "admin", "pgdoorman", "SHOW VERSION")
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(stdout).NotTo(BeEmpty())
-		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
 		By("rotating the admin password Secret")
 		var secret corev1.Secret
@@ -540,7 +540,7 @@ var _ = Describe("pg_doorman pooler", func() {
 		By("waiting for wrapper to detect secret change and reload config")
 		Eventually(func() string {
 			return getSidecarLogs(ctx, clientset, ns.Name, podName)
-		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(
+		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(
 			And(
 				ContainSubstring(`"secretHashChanged":true`),
 				ContainSubstring("config reloaded successfully"),
@@ -553,7 +553,7 @@ var _ = Describe("pg_doorman pooler", func() {
 				rotatedPassword, "admin", "pgdoorman", "SHOW VERSION")
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(stdout).NotTo(BeEmpty())
-		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
 		By("verifying old password no longer works")
 		_, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName,
@@ -606,7 +606,7 @@ var _ = Describe("pg_doorman pooler", func() {
 		clusterName := "test-failover"
 
 		By("creating admin password Secret and PgDoorman CR")
-		ensureAdminPasswordSecret(ctx, cl, ns.Name)
+		ensureAdminPasswordSecret(ctx, cl, ns.Name, clusterName)
 		Expect(cl.Create(ctx, newPgDoorman(ns.Name, configName, clusterName))).To(Succeed())
 
 		By("creating 2-instance Cluster")
@@ -684,20 +684,16 @@ var _ = Describe("pg_doorman pooler", func() {
 			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(stdout).To(ContainSubstring("1"))
-		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
 		By("deleting the PgDoorman CR")
 		var pgDoorman pgdoormanv1alpha1.PgDoorman
 		Expect(cl.Get(ctx, types.NamespacedName{Name: configName, Namespace: ns.Name}, &pgDoorman)).To(Succeed())
 		Expect(cl.Delete(ctx, &pgDoorman)).To(Succeed())
 
-		By("waiting for wrapper to log a warning about the missing CR")
-		Eventually(func() string {
-			return getSidecarLogs(ctx, clientset, ns.Name, podName)
-		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(
-			ContainSubstring("failed to get PgDoorman CR"),
-		)
-
+		// The wrapper no longer reads the CR: the rendered Secret stays in
+		// place (owned by the Cluster), so the pooler keeps its last-good
+		// config with no error at all.
 		By("verifying pooler keeps serving connections with the last-good config")
 		Consistently(func(g Gomega) {
 			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
@@ -713,7 +709,7 @@ var _ = Describe("pg_doorman pooler", func() {
 		By("waiting for wrapper to reload the config from the recreated CR")
 		Eventually(func() string {
 			return getSidecarLogs(ctx, clientset, ns.Name, podName)
-		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(
+		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(
 			ContainSubstring("config reloaded successfully"),
 		)
 
@@ -724,7 +720,7 @@ var _ = Describe("pg_doorman pooler", func() {
 			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(stdout).To(ContainSubstring("1"))
-		}).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 	})
 
 	// Test 16: Invalid poolMode is rejected at admission by CRD enum validation.

@@ -106,8 +106,8 @@ func TestInjectSidecarIdempotent(t *testing.T) {
 	if got := len(spec.InitContainers); got != 1 {
 		t.Errorf("expected 1 init container after double injection, got %d", got)
 	}
-	if got := len(spec.Volumes); got != 3 {
-		t.Errorf("expected 3 volumes (scratch+tls+podinfo) after double injection, got %d", got)
+	if got := len(spec.Volumes); got != 4 {
+		t.Errorf("expected 4 volumes (scratch+tls+config+podinfo) after double injection, got %d", got)
 	}
 }
 

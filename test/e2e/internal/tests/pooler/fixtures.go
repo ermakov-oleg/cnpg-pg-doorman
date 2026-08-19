@@ -21,9 +21,10 @@ const (
 	e2eAdminPasswordSecret = "e2e-admin-password"
 )
 
-// newAdminPasswordSecret creates the Secret backing adminPasswordSecretRef.
-func newAdminPasswordSecret(namespace string) *corev1.Secret {
-	return newPasswordSecret(namespace, e2eAdminPasswordSecret, e2eAdminPassword)
+// newAdminPasswordSecret creates the Secret backing adminPasswordSecretRef,
+// labeled for the cluster (the render controller rejects unlabeled secrets).
+func newAdminPasswordSecret(namespace, clusterName string) *corev1.Secret {
+	return newPasswordSecret(namespace, e2eAdminPasswordSecret, clusterName, e2eAdminPassword)
 }
 
 func newPgDoorman(namespace, name, clusterName string) *pgdoormanv1alpha1.PgDoorman {
@@ -140,12 +141,14 @@ func newClusterWithInvalidParams(namespace, name, configName string) *cnpgv1.Clu
 	return c
 }
 
-// newPasswordSecret creates a Secret with a password key.
-func newPasswordSecret(namespace, name, password string) *corev1.Secret {
+// newPasswordSecret creates a Secret with a password key, labeled as owned by
+// the cluster: the render controller only accepts labeled secrets.
+func newPasswordSecret(namespace, name, clusterName, password string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			Labels:    map[string]string{"cnpg.io/cluster": clusterName},
 		},
 		StringData: map[string]string{
 			"password": password,

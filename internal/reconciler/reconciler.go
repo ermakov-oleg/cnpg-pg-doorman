@@ -19,6 +19,7 @@ import (
 
 	"github.com/ermakov-oleg/cnpg-pg-doorman/api/v1alpha1"
 	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/config"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/controller"
 	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/metrics"
 	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/specs"
 )
@@ -114,10 +115,9 @@ func (r Implementation) pre(
 		return nil, err
 	}
 
-	if err := r.ensureRole(ctx, &cluster, &pgDoorman); err != nil {
-		return nil, err
-	}
-	if err := r.ensureRoleBinding(ctx, &cluster); err != nil {
+	// RBAC for pods is gone: config is rendered centrally into a Secret.
+	// Legacy per-cluster Role/RoleBinding are removed on sight.
+	if err := r.cleanupLegacyRBAC(ctx, &cluster); err != nil {
 		return nil, err
 	}
 	if err := r.ensureService(ctx, &cluster, pluginConfig.PoolerPort); err != nil {
@@ -154,6 +154,9 @@ func (r Implementation) cleanup(ctx context.Context, cluster *cnpgv1.Cluster) er
 		&corev1.Service{ObjectMeta: metav1.ObjectMeta{
 			Namespace: cluster.Namespace, Name: specs.GetServiceName(cluster.Name),
 		}},
+		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+			Namespace: cluster.Namespace, Name: controller.RenderedSecretName(cluster.Name),
+		}},
 	}
 	for _, obj := range objects {
 		if err := r.Client.Delete(ctx, obj); err != nil {
@@ -164,6 +167,24 @@ func (r Implementation) cleanup(ctx context.Context, cluster *cnpgv1.Cluster) er
 		}
 		logger.Info("Deleted plugin resource after plugin was disabled",
 			"kind", obj.GetObjectKind().GroupVersionKind().Kind, "name", obj.GetName())
+	}
+	return nil
+}
+
+// cleanupLegacyRBAC removes the pre-rendered-config per-cluster Role and
+// RoleBinding that granted pods direct secret access.
+func (r Implementation) cleanupLegacyRBAC(ctx context.Context, cluster *cnpgv1.Cluster) error {
+	for _, obj := range []client.Object{
+		&rbacv1.Role{ObjectMeta: metav1.ObjectMeta{
+			Namespace: cluster.Namespace, Name: specs.GetRBACName(cluster.Name),
+		}},
+		&rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{
+			Namespace: cluster.Namespace, Name: specs.GetRBACName(cluster.Name),
+		}},
+	} {
+		if err := r.Client.Delete(ctx, obj); err != nil && !apierrs.IsNotFound(err) {
+			return err
+		}
 	}
 	return nil
 }
@@ -203,79 +224,3 @@ func (r Implementation) ensureService(
 	return r.Client.Patch(ctx, &svc, patch)
 }
 
-func (r Implementation) ensureRole(
-	ctx context.Context,
-	cluster *cnpgv1.Cluster,
-	pgDoorman *v1alpha1.PgDoorman,
-) error {
-	newRole := specs.BuildRole(cluster, pgDoorman)
-
-	var role rbacv1.Role
-	if err := r.Client.Get(ctx, client.ObjectKey{
-		Namespace: newRole.Namespace,
-		Name:      newRole.Name,
-	}, &role); err != nil {
-		if !apierrs.IsNotFound(err) {
-			return err
-		}
-
-		log.FromContext(ctx).Info("Creating role", "name", newRole.Name, "namespace", newRole.Namespace)
-		if err := ctrl.SetControllerReference(cluster, newRole, r.Client.Scheme()); err != nil {
-			return err
-		}
-		return r.Client.Create(ctx, newRole)
-	}
-
-	if equality.Semantic.DeepEqual(newRole.Rules, role.Rules) {
-		return nil
-	}
-
-	log.FromContext(ctx).Info("Patching role", "name", newRole.Name, "namespace", newRole.Namespace)
-	patch := client.MergeFrom(role.DeepCopy())
-	role.Rules = newRole.Rules
-	return r.Client.Patch(ctx, &role, patch)
-}
-
-func (r Implementation) ensureRoleBinding(
-	ctx context.Context,
-	cluster *cnpgv1.Cluster,
-) error {
-	newRoleBinding := specs.BuildRoleBinding(cluster)
-
-	var roleBinding rbacv1.RoleBinding
-	if err := r.Client.Get(ctx, client.ObjectKey{
-		Namespace: cluster.Namespace,
-		Name:      specs.GetRBACName(cluster.Name),
-	}, &roleBinding); err != nil {
-		if !apierrs.IsNotFound(err) {
-			return err
-		}
-
-		if err := ctrl.SetControllerReference(cluster, newRoleBinding, r.Client.Scheme()); err != nil {
-			return err
-		}
-		return r.Client.Create(ctx, newRoleBinding)
-	}
-
-	// RoleRef is immutable — if it changed, delete and recreate
-	if !equality.Semantic.DeepEqual(roleBinding.RoleRef, newRoleBinding.RoleRef) {
-		log.FromContext(ctx).Info("RoleRef changed, recreating RoleBinding", "name", roleBinding.Name)
-		if err := r.Client.Delete(ctx, &roleBinding); err != nil {
-			return err
-		}
-		if err := ctrl.SetControllerReference(cluster, newRoleBinding, r.Client.Scheme()); err != nil {
-			return err
-		}
-		return r.Client.Create(ctx, newRoleBinding)
-	}
-
-	// Update subjects if they changed
-	if !equality.Semantic.DeepEqual(roleBinding.Subjects, newRoleBinding.Subjects) {
-		log.FromContext(ctx).Info("Patching RoleBinding subjects", "name", roleBinding.Name)
-		patch := client.MergeFrom(roleBinding.DeepCopy())
-		roleBinding.Subjects = newRoleBinding.Subjects
-		return r.Client.Patch(ctx, &roleBinding, patch)
-	}
-
-	return nil
-}

@@ -17,12 +17,16 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/ermakov-oleg/cnpg-pg-doorman/api/v1alpha1"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/controller"
 	pluginIdentity "github.com/ermakov-oleg/cnpg-pg-doorman/internal/identity"
 	pluginLifecycle "github.com/ermakov-oleg/cnpg-pg-doorman/internal/lifecycle"
 	pluginOperator "github.com/ermakov-oleg/cnpg-pg-doorman/internal/operator"
@@ -78,6 +82,17 @@ func (c *CNPGI) Start(ctx context.Context) error {
 	return srv.Start(ctx)
 }
 
+// secretLabelSelector narrows the Secret informer to cluster-owned or
+// explicitly allowed secrets.
+func secretLabelSelector() labels.Selector {
+	owned, _ := labels.NewRequirement(controller.ClusterLabel, selection.Exists, nil)
+	return labels.NewSelector().Add(*owned)
+}
+
+func slogError(ctx context.Context, err error, msg string) {
+	log.FromContext(ctx).Error(err, msg)
+}
+
 // NewCmd creates the serve command with ctrl.NewManager for k8s client access.
 func NewCmd() *cobra.Command {
 	// Use CreateMainCmd to get the command with all standard flags (TLS, etc.)
@@ -107,10 +122,21 @@ func NewCmd() *cobra.Command {
 			// Step down voluntarily on shutdown so a standby replica can take
 			// over without waiting for the lease to expire.
 			LeaderElectionReleaseOnCancel: true,
+			Cache: cache.Options{
+				ByObject: map[client.Object]cache.ByObject{
+					// The rendering controller watches only cluster-scoped
+					// secrets (CNPG labels its own; users label custom ones):
+					// a full cluster-wide Secret informer would cache every
+					// secret in the cluster.
+					&corev1.Secret{}: {
+						Label: secretLabelSelector(),
+					},
+				},
+			},
 			Client: client.Options{
 				Cache: &client.CacheOptions{
-					// Disable cache for RBAC types — direct API reads avoid
-					// needing cluster-wide list/watch on roles and rolebindings.
+					// Disable cache for types read rarely and without
+					// cluster-wide list/watch RBAC.
 					DisableFor: []client.Object{
 						&rbacv1.Role{},
 						&rbacv1.RoleBinding{},
@@ -121,6 +147,14 @@ func NewCmd() *cobra.Command {
 		})
 		if err != nil {
 			logger.Error(err, "unable to start manager")
+			return err
+		}
+
+		if err := (&controller.RenderedConfigReconciler{
+			Client:   mgr.GetClient(),
+			Recorder: mgr.GetEventRecorderFor("pg-doorman-render"),
+		}).SetupWithManager(mgr); err != nil {
+			slogError(ctx, err, "unable to set up rendered config controller")
 			return err
 		}
 

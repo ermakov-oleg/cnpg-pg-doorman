@@ -22,6 +22,8 @@ const (
 	scratchMountPath     = "/tmp"
 	tlsVolumeName     = "pg-doorman-server-tls"
 	tlsMountPath      = "/etc/pg-doorman-tls"
+	configVolumeName  = "pg-doorman-config"
+	configMountPath   = "/etc/pg-doorman-config"
 	podInfoVolumeName = "pg-doorman-podinfo"
 	podInfoMountPath  = "/etc/pg-doorman-podinfo"
 	// instanceRoleLabel is the CNPG pod label carrying primary/replica.
@@ -61,7 +63,6 @@ func reconcilePod(
 }
 
 func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluster *cnpgv1.Cluster) {
-	clusterNamespace := cluster.Namespace
 
 	// Add emptyDir scratch volume for /tmp
 	if !hasVolume(spec.Volumes, scratchVolumeName) {
@@ -102,6 +103,17 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluste
 		},
 	})
 
+	// Mount the rendered config Secret: the wrapper has no kube client and
+	// applies whatever the plugin controller rendered for this cluster.
+	ensureVolume(spec, corev1.Volume{
+		Name: configVolumeName,
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: cluster.Name + "-doorman-config",
+			},
+		},
+	})
+
 	// Build sidecar container
 	sidecar := corev1.Container{
 		Name:  sidecarContainerName,
@@ -122,10 +134,7 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluste
 			},
 		},
 		Env: []corev1.EnvVar{
-			{Name: "PG_DOORMAN_CONFIG_NAME", Value: cfg.ConfigName},
-			{Name: "PG_DOORMAN_CONFIG_NAMESPACE", Value: clusterNamespace},
-			{Name: "POOLER_PORT", Value: strconv.Itoa(cfg.PoolerPort)},
-			{Name: "METRICS_PORT", Value: strconv.Itoa(cfg.MetricsPort)},
+			{Name: "CONFIG_SOURCE", Value: configMountPath + "/pg_doorman.yaml"},
 			{Name: "HEALTH_PORT", Value: strconv.Itoa(config.WrapperHealthPort)},
 			// Read natively by pg_doorman (clap env) and by the wrapper.
 			{Name: "LOG_LEVEL", Value: cfg.LogLevel},
@@ -141,6 +150,11 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluste
 			{
 				Name:      tlsVolumeName,
 				MountPath: tlsMountPath,
+				ReadOnly:  true,
+			},
+			{
+				Name:      configVolumeName,
+				MountPath: configMountPath,
 				ReadOnly:  true,
 			},
 			{

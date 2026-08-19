@@ -5,26 +5,31 @@ metadata:
     app: pg-doorman
   name: pg-doorman
 rules:
-  # Read PgDoorman CRDs (cached by controller-runtime)
+  # Watch PgDoorman CRDs (rendering controller)
   - apiGroups: ["pg-doorman.cnpg.io"]
     resources: ["pgdoormen"]
     verbs: ["get", "list", "watch"]
-  # Manage Roles in cluster namespaces (direct, no cache)
+  # Watch Clusters: plugin parameters carry ports and the configName
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters"]
+    verbs: ["get", "list", "watch"]
+  # Render per-cluster config Secrets; the informer is label-scoped to
+  # cnpg.io/cluster, so unlabeled secrets are never cached or readable.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  # Events on PgDoorman for render failures
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  # Cleanup of legacy per-cluster Roles/RoleBindings (pre-rendered-config)
   - apiGroups: ["rbac.authorization.k8s.io"]
-    resources: ["roles"]
-    verbs: ["get", "create", "update", "patch", "delete"]
-  # Manage RoleBindings in cluster namespaces (direct, no cache)
-  - apiGroups: ["rbac.authorization.k8s.io"]
-    resources: ["rolebindings"]
-    verbs: ["get", "create", "patch", "delete"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "delete"]
   # Manage the pooler read-write Service per cluster
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["get", "create", "patch", "delete"]
-  # Allow delegating Secret reads to per-cluster Roles without RBAC escalation failure
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
