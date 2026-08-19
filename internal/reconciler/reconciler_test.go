@@ -86,6 +86,7 @@ func pgDoormanWithSecret(secretName string) *v1alpha1.PgDoorman {
 	return &v1alpha1.PgDoorman{
 		ObjectMeta: metav1.ObjectMeta{Name: testConfigName, Namespace: testNamespace},
 		Spec: v1alpha1.PgDoormanSpec{
+			ClusterRef: machineryapi.LocalObjectReference{Name: testCluster},
 			Pools: map[string]v1alpha1.PoolSpec{
 				"db": {
 					Users: []v1alpha1.UserSpec{

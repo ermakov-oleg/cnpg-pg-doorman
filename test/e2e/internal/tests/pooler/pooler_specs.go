@@ -44,7 +44,7 @@ func createClusterAndWait(
 ) {
 	By("creating admin password Secret and PgDoorman CR")
 	ensureAdminPasswordSecret(ctx, cl, ns.Name)
-	Expect(cl.Create(ctx, newPgDoorman(ns.Name, configName))).To(Succeed())
+	Expect(cl.Create(ctx, newPgDoorman(ns.Name, configName, clusterName))).To(Succeed())
 
 	By("creating Cluster")
 	Expect(cl.Create(ctx, newCluster(ns.Name, clusterName, configName))).To(Succeed())
@@ -473,7 +473,7 @@ var _ = Describe("pg_doorman pooler", func() {
 	// Test 11: Invalid plugin parameters block reconciliation
 	It("should block cluster reconciliation when plugin parameters are invalid", func(ctx SpecContext) {
 		By("creating PgDoorman CR")
-		Expect(cl.Create(ctx, newPgDoorman(ns.Name, "cr-invalid-params"))).To(Succeed())
+		Expect(cl.Create(ctx, newPgDoorman(ns.Name, "cr-invalid-params", "test-invalid-params"))).To(Succeed())
 
 		By("creating Cluster with invalid poolerPort")
 		c := newClusterWithInvalidParams(ns.Name, "test-invalid-params", "cr-invalid-params")
@@ -507,7 +507,7 @@ var _ = Describe("pg_doorman pooler", func() {
 		Expect(cl.Create(ctx, newPasswordSecret(ns.Name, secretName, initialPassword))).To(Succeed())
 
 		By("creating PgDoorman CR with secret ref")
-		Expect(cl.Create(ctx, newPgDoormanWithSecretRef(ns.Name, configName, secretName))).To(Succeed())
+		Expect(cl.Create(ctx, newPgDoormanWithSecretRef(ns.Name, configName, clusterName, secretName))).To(Succeed())
 
 		By("creating Cluster")
 		Expect(cl.Create(ctx, newCluster(ns.Name, clusterName, configName))).To(Succeed())
@@ -607,7 +607,7 @@ var _ = Describe("pg_doorman pooler", func() {
 
 		By("creating admin password Secret and PgDoorman CR")
 		ensureAdminPasswordSecret(ctx, cl, ns.Name)
-		Expect(cl.Create(ctx, newPgDoorman(ns.Name, configName))).To(Succeed())
+		Expect(cl.Create(ctx, newPgDoorman(ns.Name, configName, clusterName))).To(Succeed())
 
 		By("creating 2-instance Cluster")
 		Expect(cl.Create(ctx, newClusterWithInstances(ns.Name, clusterName, configName, 2))).To(Succeed())
@@ -706,7 +706,7 @@ var _ = Describe("pg_doorman pooler", func() {
 		}).WithTimeout(15 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 
 		By("recreating the PgDoorman CR with a config change")
-		recreated := newPgDoorman(ns.Name, configName)
+		recreated := newPgDoorman(ns.Name, configName, clusterName)
 		recreated.Spec.General.WorkerThreads = ptr.To(4)
 		Expect(cl.Create(ctx, recreated)).To(Succeed())
 
@@ -729,7 +729,7 @@ var _ = Describe("pg_doorman pooler", func() {
 
 	// Test 16: Invalid poolMode is rejected at admission by CRD enum validation.
 	It("should reject PgDoorman CR with invalid poolMode at admission", func(ctx SpecContext) {
-		cr := newPgDoorman(ns.Name, "cr-invalid-mode")
+		cr := newPgDoorman(ns.Name, "cr-invalid-mode", "no-such-cluster")
 		pool := cr.Spec.Pools["app"]
 		pool.PoolMode = "transacshion"
 		cr.Spec.Pools["app"] = pool

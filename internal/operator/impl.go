@@ -4,9 +4,13 @@ import (
 	"context"
 
 	"github.com/cloudnative-pg/cnpg-i/pkg/operator"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type Implementation struct {
+	// Client reads PgDoorman CRs for admission validation; nil skips those
+	// checks (unit tests that only exercise parameter parsing).
+	Client client.Client
 	operator.UnimplementedOperatorServer
 }
 

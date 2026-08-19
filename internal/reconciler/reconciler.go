@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	"fmt"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/decoder"
@@ -103,6 +104,13 @@ func (r Implementation) pre(
 				Behavior: reconciler.ReconcilerHooksResult_BEHAVIOR_REQUEUE,
 			}, nil
 		}
+		return nil, err
+	}
+
+	if pgDoorman.Spec.ClusterRef.Name != cluster.Name {
+		err := fmt.Errorf("PgDoorman %q belongs to cluster %q (spec.clusterRef), not %q",
+			pgDoorman.Name, pgDoorman.Spec.ClusterRef.Name, cluster.Name)
+		logger.Error(err, "refusing to reconcile with a foreign PgDoorman")
 		return nil, err
 	}
 

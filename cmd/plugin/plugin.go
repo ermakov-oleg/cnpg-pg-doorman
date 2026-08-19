@@ -61,7 +61,7 @@ func (c *CNPGI) Start(ctx context.Context) error {
 			Client: c.Client,
 		})
 		lifecycle.RegisterOperatorLifecycleServer(server, pluginLifecycle.Implementation{})
-		operator.RegisterOperatorServer(server, pluginOperator.Implementation{})
+		operator.RegisterOperatorServer(server, pluginOperator.Implementation{Client: c.Client})
 		return nil
 	}
 

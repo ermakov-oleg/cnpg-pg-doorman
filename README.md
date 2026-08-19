@@ -111,6 +111,8 @@ kind: PgDoorman
 metadata:
   name: my-cluster-doorman
 spec:
+  clusterRef:
+    name: my-cluster
   pools:
     app:
       authQuery:
@@ -219,6 +221,12 @@ Parameters passed via `spec.plugins[].parameters` in the CNPG Cluster:
 | `logLevel`             | `info`  | Log level of pg_doorman and the wrapper (`error`/`warn`/`info`/`debug`/`trace`) |
 
 ### PgDoorman CRD
+
+#### Top-level
+
+| Field        | Description |
+| ------------ | ----------- |
+| `clusterRef` | **Required, immutable.** Name of the CNPG `Cluster` this configuration belongs to. Admission rejects a Cluster whose `configName` points at a PgDoorman owned by another cluster. |
 
 #### Pool Settings (`spec.pools.<db>`)
 

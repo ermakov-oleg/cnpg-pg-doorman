@@ -26,13 +26,14 @@ func newAdminPasswordSecret(namespace string) *corev1.Secret {
 	return newPasswordSecret(namespace, e2eAdminPasswordSecret, e2eAdminPassword)
 }
 
-func newPgDoorman(namespace, name string) *pgdoormanv1alpha1.PgDoorman {
+func newPgDoorman(namespace, name, clusterName string) *pgdoormanv1alpha1.PgDoorman {
 	return &pgdoormanv1alpha1.PgDoorman{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
 		Spec: pgdoormanv1alpha1.PgDoormanSpec{
+			ClusterRef: machineryapi.LocalObjectReference{Name: clusterName},
 			General: &pgdoormanv1alpha1.GeneralSpec{
 				WorkerThreads: ptr.To(2),
 				AdminPasswordSecretRef: &machineryapi.SecretKeySelector{
@@ -153,8 +154,8 @@ func newPasswordSecret(namespace, name, password string) *corev1.Secret {
 }
 
 // newPgDoormanWithSecretRef creates a PgDoorman CR with admin password from a Secret.
-func newPgDoormanWithSecretRef(namespace, name, secretName string) *pgdoormanv1alpha1.PgDoorman {
-	cr := newPgDoorman(namespace, name)
+func newPgDoormanWithSecretRef(namespace, name, clusterName, secretName string) *pgdoormanv1alpha1.PgDoorman {
+	cr := newPgDoorman(namespace, name, clusterName)
 	cr.Spec.General.AdminPasswordSecretRef = &machineryapi.SecretKeySelector{
 		LocalObjectReference: machineryapi.LocalObjectReference{
 			Name: secretName,
