@@ -308,17 +308,19 @@ var _ = Describe("pg_doorman pooler", func() {
 		}
 		Expect(cl.Update(ctx, &pgDoorman)).To(Succeed())
 
-		By("waiting for CRD change to propagate via polling")
-		time.Sleep(10 * time.Second)
+		// Worst-case detection latency is ~15s: 5s CR poll on top of the 10s
+		// ExtendedClient TTL cache — a fixed 10s sleep flaked (seen on PR #19).
+		By("waiting for wrapper to reload the config")
+		Eventually(func() string {
+			return getSidecarLogs(ctx, clientset, ns.Name, podName)
+		}).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(
+			ContainSubstring("config reloaded successfully"),
+		)
 
 		By("verifying pod was NOT restarted (same UID)")
 		var podAfter corev1.Pod
 		Expect(cl.Get(ctx, types.NamespacedName{Name: podName, Namespace: ns.Name}, &podAfter)).To(Succeed())
 		Expect(podAfter.UID).To(Equal(uidBefore))
-
-		By("checking wrapper logs for successful reload")
-		logs := getSidecarLogs(ctx, clientset, ns.Name, podName)
-		Expect(logs).To(ContainSubstring("config reloaded successfully"))
 	})
 
 	// Test 7: Image update triggers rolling restart
@@ -394,12 +396,12 @@ var _ = Describe("pg_doorman pooler", func() {
 			time.Sleep(1 * time.Second)
 		}
 
-		By("waiting for polling propagation")
-		time.Sleep(10 * time.Second)
-
-		By("checking that wrapper logs show config reloaded")
-		logs := getSidecarLogs(ctx, clientset, ns.Name, podName)
-		Expect(logs).To(ContainSubstring("config reloaded successfully"))
+		By("waiting for wrapper to reload the config")
+		Eventually(func() string {
+			return getSidecarLogs(ctx, clientset, ns.Name, podName)
+		}).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(
+			ContainSubstring("config reloaded successfully"),
+		)
 
 		By("verifying pooler still works after rapid updates")
 		password := getAppPassword(ctx, cl, ns.Name, clusterName)
