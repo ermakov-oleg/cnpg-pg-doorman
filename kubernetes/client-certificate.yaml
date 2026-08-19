@@ -5,12 +5,12 @@ metadata:
 spec:
   secretName: pg-doorman-client-tls
   commonName: pg-doorman-client
-  duration: 2160h
+  duration: 8760h # 1y: rare rotations shrink the CNPG-side leaf-pinning window
   renewBefore: 360h
   isCA: false
   usages:
     - client auth
   issuerRef:
-    name: selfsigned-issuer
+    name: pg-doorman-ca-issuer
     kind: Issuer
     group: cert-manager.io

@@ -7,12 +7,12 @@ spec:
   commonName: pg-doorman
   dnsNames:
     - pg-doorman
-  duration: 2160h
+  duration: 8760h # 1y: rare rotations shrink the CNPG-side leaf-pinning window
   renewBefore: 360h
   isCA: false
   usages:
     - server auth
   issuerRef:
-    name: selfsigned-issuer
+    name: pg-doorman-ca-issuer
     kind: Issuer
     group: cert-manager.io

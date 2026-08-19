@@ -40,7 +40,9 @@ spec:
             - serve
             - --server-cert=/server/tls.crt
             - --server-key=/server/tls.key
-            - --client-cert=/client/tls.crt
+            # ca.crt (not tls.crt): verify CNPG client certs by the shared CA,
+            # so a client cert rotation never races the projected-volume sync.
+            - --client-cert=/client/ca.crt
             - --server-address=:9090
             - --leader-elect
             # cnpg-i-machinery defaults --debug to TRUE: development zap config
