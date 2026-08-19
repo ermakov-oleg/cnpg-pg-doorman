@@ -1,7 +1,7 @@
 package specs
 
 import (
-	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/api/v1alpha1"
 )
 
 // CollectSecretNames extracts all Secret names referenced in PgDoormanSpec.

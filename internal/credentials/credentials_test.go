@@ -12,8 +12,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/configgen"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/api/v1alpha1"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/configgen"
 )
 
 const testNamespace = "ns"

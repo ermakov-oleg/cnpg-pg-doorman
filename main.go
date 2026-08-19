@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/o-ermakov/cnpg-pg-doorman/cmd/plugin"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/cmd/plugin"
 )
 
 func main() {

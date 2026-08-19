@@ -9,8 +9,8 @@ import (
 	"github.com/cloudnative-pg/cnpg-i/pkg/lifecycle"
 	"github.com/cloudnative-pg/machinery/pkg/log"
 
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/config"
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/metrics"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/config"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/metrics"
 )
 
 type Implementation struct {

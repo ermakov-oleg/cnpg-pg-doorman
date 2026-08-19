@@ -1,4 +1,4 @@
-module github.com/o-ermakov/cnpg-pg-doorman
+module github.com/ermakov-oleg/cnpg-pg-doorman
 
 go 1.26.4
 

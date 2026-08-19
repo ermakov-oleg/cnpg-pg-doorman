@@ -14,10 +14,10 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
-	internalClient "github.com/o-ermakov/cnpg-pg-doorman/test/e2e/internal/client"
+	internalClient "github.com/ermakov-oleg/cnpg-pg-doorman/test/e2e/internal/client"
 
 	// Import test packages
-	_ "github.com/o-ermakov/cnpg-pg-doorman/test/e2e/internal/tests/pooler"
+	_ "github.com/ermakov-oleg/cnpg-pg-doorman/test/e2e/internal/tests/pooler"
 )
 
 var _ = SynchronizedBeforeSuite(func(ctx SpecContext) []byte {

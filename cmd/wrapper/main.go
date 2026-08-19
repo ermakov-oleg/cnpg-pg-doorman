@@ -20,11 +20,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/configgen"
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/credentials"
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/extclient"
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/wrapper"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/api/v1alpha1"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/configgen"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/credentials"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/extclient"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/wrapper"
 )
 
 const (
