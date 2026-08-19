@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -111,6 +112,7 @@ func NewCmd() *cobra.Command {
 					DisableFor: []client.Object{
 						&rbacv1.Role{},
 						&rbacv1.RoleBinding{},
+						&corev1.Service{},
 					},
 				},
 			},

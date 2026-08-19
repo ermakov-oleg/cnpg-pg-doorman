@@ -170,22 +170,7 @@ See the [examples/](examples/) directory for more configuration samples.
 
 ### Connecting to pg_doorman
 
-pg_doorman listens on port `6432` inside each PostgreSQL pod. The standard CNPG Services still point to PostgreSQL on port `5432`. To route client traffic through the pooler, create a separate Service:
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: my-cluster-pooler
-spec:
-  selector:
-    cnpg.io/cluster: my-cluster
-    role: primary
-  ports:
-    - port: 5432
-      targetPort: 6432
-      protocol: TCP
-```
+pg_doorman listens on port `6432` inside each PostgreSQL pod. The standard CNPG Services still point to PostgreSQL on port `5432`. The plugin automatically creates a `<cluster>-doorman-rw` Service (port `5432`, targeting the pooler on the primary instance), so clients connect to it as a drop-in replacement for `<cluster>-rw`.
 
 For in-pod communication (e.g. from application sidecars), connect to `localhost:6432`.
 
