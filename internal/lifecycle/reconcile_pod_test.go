@@ -230,3 +230,21 @@ func TestInjectSidecarPortNamesDoNotCollideWithCNPG(t *testing.T) {
 		}
 	}
 }
+
+func TestInjectSidecarLogLevelEnv(t *testing.T) {
+	cfg := testPluginConfig()
+	cfg.LogLevel = "debug"
+	spec := &corev1.PodSpec{}
+	injectSidecar(spec, cfg, testCluster())
+
+	sidecar := findSidecar(t, spec)
+	for _, e := range sidecar.Env {
+		if e.Name == "LOG_LEVEL" {
+			if e.Value != "debug" {
+				t.Errorf("LOG_LEVEL = %q, want debug", e.Value)
+			}
+			return
+		}
+	}
+	t.Error("LOG_LEVEL env var missing on the sidecar")
+}

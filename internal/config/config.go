@@ -30,6 +30,10 @@ const (
 	ParamMetricsPort = "metricsPort"
 	ParamConfigName  = "configName"
 
+	ParamLogLevel = "logLevel"
+
+	DefaultLogLevel = "info"
+
 	ParamSidecarCPURequest    = "sidecarCpuRequest"
 	ParamSidecarMemoryRequest = "sidecarMemoryRequest"
 	ParamSidecarCPULimit      = "sidecarCpuLimit"
@@ -45,6 +49,7 @@ type PluginConfiguration struct {
 	MetricsPort  int
 	ConfigName   string
 	SidecarImage string
+	LogLevel     string
 	Resources    corev1.ResourceRequirements
 	ParseErrors  []string
 }
@@ -54,6 +59,7 @@ func NewFromCluster(cluster *cnpgv1.Cluster) *PluginConfiguration {
 		PoolerPort:   DefaultPoolerPort,
 		MetricsPort:  DefaultMetricsPort,
 		SidecarImage: os.Getenv("SIDECAR_IMAGE"),
+		LogLevel:     DefaultLogLevel,
 	}
 
 	for _, plugin := range cluster.Spec.Plugins {
@@ -82,6 +88,9 @@ func NewFromCluster(cluster *cnpgv1.Cluster) *PluginConfiguration {
 		}
 		if v, ok := plugin.Parameters[ParamConfigName]; ok {
 			cfg.ConfigName = v
+		}
+		if v, ok := plugin.Parameters[ParamLogLevel]; ok {
+			cfg.LogLevel = v
 		}
 
 		cfg.Resources = corev1.ResourceRequirements{
@@ -141,6 +150,12 @@ func (c *PluginConfiguration) Validate() error {
 	}
 	if c.PoolerPort == c.MetricsPort {
 		return fmt.Errorf("%s and %s must be different", ParamPoolerPort, ParamMetricsPort)
+	}
+	switch c.LogLevel {
+	// Empty means the default: configs built in code may leave it unset.
+	case "", "error", "warn", "info", "debug", "trace":
+	default:
+		return fmt.Errorf("%s must be one of error|warn|info|debug|trace, got %q", ParamLogLevel, c.LogLevel)
 	}
 	// Ports already bound in a CNPG instance pod: pg_doorman would fail to
 	// bind, the native sidecar would crash-loop and the pod never gets Ready.
