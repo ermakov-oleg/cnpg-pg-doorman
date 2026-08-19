@@ -78,12 +78,16 @@ func TestEnsureAtStartupDownloadsDesiredBinary(t *testing.T) {
 	specPath := writeSpec(t, dir, &BinarySpec{URL: url, SHA256: map[string]string{"testarch": sha(desired)}, CABundle: ca})
 	runtimePath := filepath.Join(dir, "bin", "pg_doorman")
 	s := NewBinarySyncer(specPath, image, runtimePath, "testarch", slog.Default())
-	if _, err := s.EnsureAtStartup(context.Background()); err != nil {
+	seed, err := s.EnsureAtStartup(context.Background())
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	got, _ := os.ReadFile(runtimePath)
 	if string(got) != "new-binary" {
 		t.Fatalf("expected downloaded binary, got %q", got)
+	}
+	if seed == nil {
+		t.Error("seed must carry the spec: the desired binary is installed")
 	}
 }
 
@@ -98,12 +102,16 @@ func TestEnsureAtStartupRejectsDigestMismatch(t *testing.T) {
 	runtimePath := filepath.Join(dir, "bin", "pg_doorman")
 	s := NewBinarySyncer(specPath, image, runtimePath, "testarch", slog.Default())
 	// Availability first: startup falls back to the image binary on failure.
-	if _, err := s.EnsureAtStartup(context.Background()); err != nil {
+	seed, err := s.EnsureAtStartup(context.Background())
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	got, _ := os.ReadFile(runtimePath)
 	if string(got) != "old" {
 		t.Fatalf("expected image binary fallback, got %q", got)
+	}
+	if seed != nil {
+		t.Error("seed must be nil after a fallback: the watcher has to retry the unsatisfied spec")
 	}
 }
 
@@ -124,7 +132,11 @@ func TestEnsureAtStartupSkipsWhenAlreadyDesired(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewBinarySyncer(specPath, image, runtimePath, "testarch", slog.Default())
-	if _, err := s.EnsureAtStartup(context.Background()); err != nil {
+	seed, err := s.EnsureAtStartup(context.Background())
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if seed == nil {
+		t.Error("seed must carry the spec: the runtime binary already matches it")
 	}
 }

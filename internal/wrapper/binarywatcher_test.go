@@ -82,6 +82,36 @@ func TestBinaryWatcherUnchangedSpecIsNoop(t *testing.T) {
 	}
 }
 
+// A startup sync that fell back to the image binary seeds a nil spec, so the
+// first poll must retry the still-unsatisfied spec instead of treating the
+// unchanged file as already applied.
+func TestBinaryWatcherRetriesSpecAfterFailedStartupSync(t *testing.T) {
+	dir := t.TempDir()
+	desired := []byte("new-binary")
+	url, ca := newBinaryServer(t, desired)
+	specPath := writeSpec(t, dir, &BinarySpec{URL: url, SHA256: map[string]string{"testarch": sha(desired)}, CABundle: ca})
+	w, up := newTestBinaryWatcher(t, dir, specPath, "image", acceptingTester)
+	w.Seed(nil)
+	BinaryStale.Set(1)
+
+	w.check(context.Background())
+
+	if up.upgrades != 1 {
+		t.Fatalf("upgrades = %d, want 1", up.upgrades)
+	}
+	if got, _ := os.ReadFile(w.runtimePath); !bytes.Equal(got, desired) {
+		t.Errorf("runtime binary = %q, want %q", got, desired)
+	}
+	if got := testutil.ToFloat64(BinaryStale); got != 0 {
+		t.Errorf("binary_stale = %v, want 0", got)
+	}
+
+	w.check(context.Background())
+	if up.upgrades != 1 {
+		t.Errorf("upgrades = %d after the spec was satisfied, want 1", up.upgrades)
+	}
+}
+
 func TestBinaryWatcherSkipsWhenAlreadyDesired(t *testing.T) {
 	dir := t.TempDir()
 	installed := "current-binary"

@@ -38,10 +38,15 @@ func NewBinarySyncer(specPath, imagePath, runtimePath, arch string, logger *slog
 	}
 }
 
-// EnsureAtStartup installs the desired binary before pg_doorman starts and
-// returns the binary.json bytes it acted on (nil when absent). Failures to
-// download degrade to the image binary: serving traffic on the baked-in
-// version beats crash-looping the pooler.
+// EnsureAtStartup installs the desired binary before pg_doorman starts.
+// Failures to download degrade to the image binary: serving traffic on the
+// baked-in version beats crash-looping the pooler.
+//
+// The returned bytes are the BinaryWatcher seed: the binary.json contents only
+// when the desired state was reached, nil when startup ended on the fallback
+// binary. A nil seed makes the watcher treat the mounted spec as new on its
+// first tick and retry it, instead of leaving the pod stale until the next
+// plugin release changes the file.
 func (s *BinarySyncer) EnsureAtStartup(ctx context.Context) ([]byte, error) {
 	data, err := os.ReadFile(s.specPath)
 	if err != nil {
@@ -80,7 +85,7 @@ func (s *BinarySyncer) EnsureAtStartup(ctx context.Context) ([]byte, error) {
 	if err := s.Download(ctx, spec, desired, s.runtimePath); err != nil {
 		s.logger.Error("binary download failed, falling back to image binary", "error", err)
 		BinaryStale.Set(1)
-		return data, s.installFromImage("")
+		return nil, s.installFromImage("")
 	}
 	s.logger.Info("desired pg_doorman binary installed before start", "sha256", desired)
 	BinaryStale.Set(0)
