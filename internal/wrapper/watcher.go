@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
@@ -37,6 +38,7 @@ type CRDWatcher struct {
 	secretHash     SecretHashFunc
 	testConfig     ConfigTester
 	lastGen        int64
+	lastUID        types.UID
 	lastSecretHash string
 }
 
@@ -95,6 +97,13 @@ func (w *CRDWatcher) check(ctx context.Context) {
 	}
 
 	gen := pgDoorman.Generation
+	uid := pgDoorman.UID
+
+	// Adopt the object the initial config was generated from: the watcher is
+	// constructed right after that, so the first observed UID is not a change.
+	if w.lastUID == "" {
+		w.lastUID = uid
+	}
 
 	var secretHash string
 	secretHashOK := true
@@ -108,14 +117,17 @@ func (w *CRDWatcher) check(ctx context.Context) {
 	}
 
 	genChanged := gen != w.lastGen
+	// Delete+recreate produces a new object whose generation restarts at 1:
+	// with unchanged secret refs the spec change would otherwise go unnoticed.
+	uidChanged := uid != w.lastUID
 	secretChanged := secretHashOK && secretHash != w.lastSecretHash
 
-	if !genChanged && !secretChanged {
+	if !genChanged && !uidChanged && !secretChanged {
 		return
 	}
 
 	w.logger.Info("PgDoorman config changed", "oldGen", w.lastGen, "newGen", gen,
-		"secretHashChanged", secretChanged)
+		"recreated", uidChanged, "secretHashChanged", secretChanged)
 
 	data, err := w.generate(ctx, &pgDoorman.Spec)
 	if err != nil {
@@ -171,6 +183,7 @@ func (w *CRDWatcher) check(ctx context.Context) {
 	}
 
 	w.lastGen = gen
+	w.lastUID = uid
 	if secretHashOK {
 		w.lastSecretHash = secretHash
 	}

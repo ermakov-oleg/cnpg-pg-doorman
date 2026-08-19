@@ -11,6 +11,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
@@ -48,6 +49,7 @@ func newTestWatcher(t *testing.T, tester ConfigTester, reloader Reloader) (*CRDW
 			Name:       "test-doorman",
 			Namespace:  "ns",
 			Generation: 2,
+			UID:        "original-uid",
 		},
 	}
 	cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr).Build()
@@ -230,5 +232,52 @@ func TestNeedsProcessRestart(t *testing.T) {
 		if !NeedsProcessRestart(base, changed) {
 			t.Errorf("%s change must require restart", name)
 		}
+	}
+}
+
+func TestCheckDetectsRecreatedCRWithSameGeneration(t *testing.T) {
+	// kubectl replace --force / GitOps prune+recreate produces a NEW object
+	// with generation=1; if the old one was also generation=1 and secret refs
+	// did not change, the new spec must still be applied — the watcher tracks
+	// the object UID, not only the generation.
+	reloader := &fakeReloader{}
+	tester := func(_ context.Context, _ string) error { return nil }
+	w, _ := newTestWatcher(t, tester, reloader)
+
+	// First check adopts the current object (gen=2 vs lastGen=1 → reload).
+	w.check(context.Background())
+	if reloader.calls != 1 {
+		t.Fatalf("setup reload expected, got %d", reloader.calls)
+	}
+
+	// Replace the object with a new UID but the same generation.
+	var old v1alpha1.PgDoorman
+	if err := w.client.Get(context.Background(), client.ObjectKey{Name: "test-doorman", Namespace: "ns"}, &old); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.client.Delete(context.Background(), &old); err != nil {
+		t.Fatal(err)
+	}
+	recreated := &v1alpha1.PgDoorman{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "test-doorman",
+			Namespace:  "ns",
+			Generation: 2,
+			UID:        "recreated-uid",
+		},
+	}
+	if err := w.client.Create(context.Background(), recreated); err != nil {
+		t.Fatal(err)
+	}
+
+	w.check(context.Background())
+	if reloader.calls != 2 {
+		t.Errorf("recreated CR with same generation must trigger a reload, got %d calls", reloader.calls)
+	}
+
+	// And no spurious reload afterwards.
+	w.check(context.Background())
+	if reloader.calls != 2 {
+		t.Errorf("no further reloads expected, got %d", reloader.calls)
 	}
 }

@@ -123,3 +123,17 @@ func TestWaitDelay(t *testing.T) {
 		})
 	}
 }
+
+func TestBackoffAfterExit(t *testing.T) {
+	// Six single crashes spread over weeks must not accumulate to the 30s cap:
+	// a long uptime proves the previous start was viable, so the penalty resets.
+	if got := backoffAfterExit(maxBackoff, backoffResetUptime+time.Second); got != initialBackoff {
+		t.Errorf("long uptime must reset backoff to %v, got %v", initialBackoff, got)
+	}
+	if got := backoffAfterExit(initialBackoff, time.Second); got != initialBackoff*backoffMultiplier {
+		t.Errorf("quick crash must escalate backoff, got %v", got)
+	}
+	if got := backoffAfterExit(maxBackoff, time.Second); got != maxBackoff {
+		t.Errorf("backoff must stay capped at %v, got %v", maxBackoff, got)
+	}
+}
