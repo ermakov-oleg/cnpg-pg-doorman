@@ -216,6 +216,7 @@ Parameters passed via `spec.plugins[].parameters` in the CNPG Cluster:
 | `sidecarMemoryRequest` | `128Mi` | Sidecar memory request             |
 | `sidecarCpuLimit`      | —       | Sidecar CPU limit (unset by default: a hard CPU cap throttles pooled traffic) |
 | `sidecarMemoryLimit`   | `512Mi` | Sidecar memory limit; `none` removes it |
+| `logLevel`             | `info`  | Log level of pg_doorman and the wrapper (`error`/`warn`/`info`/`debug`/`trace`) |
 
 ### PgDoorman CRD
 

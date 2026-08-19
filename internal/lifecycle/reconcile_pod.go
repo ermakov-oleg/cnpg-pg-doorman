@@ -127,6 +127,8 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluste
 			{Name: "POOLER_PORT", Value: strconv.Itoa(cfg.PoolerPort)},
 			{Name: "METRICS_PORT", Value: strconv.Itoa(cfg.MetricsPort)},
 			{Name: "HEALTH_PORT", Value: strconv.Itoa(config.WrapperHealthPort)},
+			// Read natively by pg_doorman (clap env) and by the wrapper.
+			{Name: "LOG_LEVEL", Value: cfg.LogLevel},
 			{Name: "TLS_CERT_PATH", Value: tlsMountPath + "/tls.crt"},
 			{Name: "TLS_KEY_PATH", Value: tlsMountPath + "/tls.key"},
 			{Name: "ROLE_FILE", Value: podInfoMountPath + "/role"},

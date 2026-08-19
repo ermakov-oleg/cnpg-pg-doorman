@@ -18,6 +18,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
 	"github.com/o-ermakov/cnpg-pg-doorman/internal/configgen"
@@ -42,7 +43,9 @@ func init() {
 }
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: wrapper.ParseLogLevel(os.Getenv("LOG_LEVEL")),
+	}))
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
@@ -66,6 +69,11 @@ func main() {
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		HealthProbeBindAddress: ":" + strconv.Itoa(healthPort),
+		Metrics: metricsserver.Options{
+			// Never bind the default :8080 in the shared PG pod netns: a user
+			// sidecar on that port would crash-loop the wrapper.
+			BindAddress: "0",
+		},
 		Client: client.Options{
 			Cache: &client.CacheOptions{
 				DisableFor: []client.Object{
