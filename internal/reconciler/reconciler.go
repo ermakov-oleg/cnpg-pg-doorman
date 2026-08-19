@@ -18,6 +18,7 @@ import (
 
 	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
 	"github.com/o-ermakov/cnpg-pg-doorman/internal/config"
+	"github.com/o-ermakov/cnpg-pg-doorman/internal/metrics"
 	"github.com/o-ermakov/cnpg-pg-doorman/internal/specs"
 )
 
@@ -41,6 +42,15 @@ func (r Implementation) GetCapabilities(
 
 // Pre is called before Cluster reconciliation to ensure RBAC.
 func (r Implementation) Pre(
+	ctx context.Context,
+	request *reconciler.ReconcilerHooksRequest,
+) (*reconciler.ReconcilerHooksResult, error) {
+	return metrics.Observe(ctx, "reconciler.Pre", func() (*reconciler.ReconcilerHooksResult, error) {
+		return r.pre(ctx, request)
+	})
+}
+
+func (r Implementation) pre(
 	ctx context.Context,
 	request *reconciler.ReconcilerHooksRequest,
 ) (*reconciler.ReconcilerHooksResult, error) {

@@ -7,10 +7,20 @@ import (
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/decoder"
 
 	"github.com/o-ermakov/cnpg-pg-doorman/internal/config"
+	"github.com/o-ermakov/cnpg-pg-doorman/internal/metrics"
 )
 
 func (i Implementation) ValidateClusterCreate(
-	_ context.Context,
+	ctx context.Context,
+	request *operator.OperatorValidateClusterCreateRequest,
+) (*operator.OperatorValidateClusterCreateResult, error) {
+	return metrics.Observe(ctx, "operator.ValidateClusterCreate",
+		func() (*operator.OperatorValidateClusterCreateResult, error) {
+			return i.validateClusterCreate(request)
+		})
+}
+
+func (i Implementation) validateClusterCreate(
 	request *operator.OperatorValidateClusterCreateRequest,
 ) (*operator.OperatorValidateClusterCreateResult, error) {
 	cluster, err := decoder.DecodeClusterLenient(request.GetDefinition())
@@ -23,7 +33,16 @@ func (i Implementation) ValidateClusterCreate(
 }
 
 func (i Implementation) ValidateClusterChange(
-	_ context.Context,
+	ctx context.Context,
+	request *operator.OperatorValidateClusterChangeRequest,
+) (*operator.OperatorValidateClusterChangeResult, error) {
+	return metrics.Observe(ctx, "operator.ValidateClusterChange",
+		func() (*operator.OperatorValidateClusterChangeResult, error) {
+			return i.validateClusterChange(request)
+		})
+}
+
+func (i Implementation) validateClusterChange(
 	request *operator.OperatorValidateClusterChangeRequest,
 ) (*operator.OperatorValidateClusterChangeResult, error) {
 	cluster, err := decoder.DecodeClusterLenient(request.GetNewCluster())

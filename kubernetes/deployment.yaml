@@ -53,6 +53,9 @@ spec:
               protocol: TCP
             - containerPort: 8081
               protocol: TCP
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
           env:
             - name: SIDECAR_IMAGE
               valueFrom:
