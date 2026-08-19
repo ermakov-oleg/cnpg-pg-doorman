@@ -216,7 +216,7 @@ var _ = Describe("pg_doorman pooler", func() {
 
 		By("verifying dynamic user data pool size matches defaultPoolSize via admin console")
 		stdout, _, err = psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName,
-			pgdoormanv1alpha1.DefaultAdminPassword, pgdoormanv1alpha1.DefaultAdminUsername, "pgdoorman", "SHOW DATABASES")
+			e2eAdminPassword, pgdoormanv1alpha1.DefaultAdminUsername, "pgdoorman", "SHOW DATABASES")
 		Expect(err).NotTo(HaveOccurred())
 		// -tA rows: name|host|port|database|force_user|pool_size|min_pool_size|reserve_pool|pool_mode|max_connections|current_connections
 		appPoolFound := false

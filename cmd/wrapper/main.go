@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -110,7 +113,11 @@ func main() {
 	}
 
 	// Build the config generator callback (resolves secrets + generates YAML)
-	generate := makeConfigGenerator(cl, namespace, poolerPort, metricsPort, tlsFiles, rawTLSKeyPath)
+	generate, err := makeConfigGenerator(cl, namespace, poolerPort, metricsPort, tlsFiles, rawTLSKeyPath)
+	if err != nil {
+		logger.Error("unable to build config generator", "error", err)
+		os.Exit(1)
+	}
 
 	// Build the secret hash function for detecting secret rotation
 	secretHashFn := func(ctx context.Context, spec *v1alpha1.PgDoormanSpec, ns string) (string, error) {
@@ -160,7 +167,14 @@ func makeConfigGenerator(
 	poolerPort, metricsPort int,
 	tlsFiles *configgen.TLSFiles,
 	rawTLSKeyPath string,
-) wrapper.ConfigGenerator {
+) (wrapper.ConfigGenerator, error) {
+	// Stable for the wrapper's lifetime so reloads do not churn the password.
+	fallbackAdminPassword, err := randomPassword()
+	if err != nil {
+		return nil, fmt.Errorf("cannot generate admin password: %w", err)
+	}
+
+
 	return func(ctx context.Context, spec *v1alpha1.PgDoormanSpec) ([]byte, error) {
 		passwords, err := credentials.ResolvePasswords(ctx, cl, namespace, spec)
 		if err != nil {
@@ -172,8 +186,18 @@ func makeConfigGenerator(
 				return nil, err
 			}
 		}
+		passwords = configgen.EnsureAdminPassword(spec, passwords, fallbackAdminPassword)
 		return configgen.Generate(spec, poolerPort, metricsPort, passwords, tlsFiles)
+	}, nil
+}
+
+// randomPassword returns a 32-char hex string from crypto/rand.
+func randomPassword() (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
 	}
+	return hex.EncodeToString(buf), nil
 }
 
 func generateAndWriteConfig(

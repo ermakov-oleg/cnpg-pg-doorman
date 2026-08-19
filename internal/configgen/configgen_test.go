@@ -1,6 +1,7 @@
 package configgen
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
@@ -301,5 +302,40 @@ func TestGenerate_NoTLSByDefault(t *testing.T) {
 	general := cfg["general"].(map[string]any)
 	if _, ok := general["tls_certificate"]; ok {
 		t.Error("tls_certificate must be omitted when TLS is not configured")
+	}
+}
+
+func TestEnsureAdminPassword(t *testing.T) {
+	// No spec password and no resolved secret: the random fallback must be
+	// used — a fixed default would let any pod on the cluster network log in
+	// to the admin console.
+	spec := minimalSpec()
+	passwords := EnsureAdminPassword(spec, nil, "random-fallback")
+	if got := passwords[AdminPasswordKey]; got != "random-fallback" {
+		t.Errorf("admin password = %q, want random fallback", got)
+	}
+
+	// Resolved secretRef password wins over the fallback.
+	passwords = EnsureAdminPassword(spec, map[string]string{AdminPasswordKey: "from-secret"}, "random-fallback")
+	if got := passwords[AdminPasswordKey]; got != "from-secret" {
+		t.Errorf("admin password = %q, want from-secret", got)
+	}
+
+	// Explicit plaintext spec password wins over the fallback.
+	spec.General = &v1alpha1.GeneralSpec{AdminPassword: "plain"}
+	passwords = EnsureAdminPassword(spec, nil, "random-fallback")
+	if _, ok := passwords[AdminPasswordKey]; ok {
+		t.Error("fallback must not override an explicit spec adminPassword")
+	}
+}
+
+func TestGenerate_NoChangeMeDefault(t *testing.T) {
+	spec := minimalSpec()
+	data, err := Generate(spec, 6432, 9127, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "change-me") {
+		t.Error("generated config must not contain the fixed change-me admin password")
 	}
 }

@@ -13,6 +13,10 @@ import (
 	pgdoormanv1alpha1 "github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
 )
 
+// e2eAdminPassword is set explicitly in fixtures: without it the wrapper
+// generates a random per-pod admin password the tests cannot know.
+const e2eAdminPassword = "e2e-admin-password"
+
 func newPgDoorman(namespace, name string) *pgdoormanv1alpha1.PgDoorman {
 	return &pgdoormanv1alpha1.PgDoorman{
 		ObjectMeta: metav1.ObjectMeta{
@@ -22,6 +26,7 @@ func newPgDoorman(namespace, name string) *pgdoormanv1alpha1.PgDoorman {
 		Spec: pgdoormanv1alpha1.PgDoormanSpec{
 			General: &pgdoormanv1alpha1.GeneralSpec{
 				WorkerThreads: ptr.To(2),
+				AdminPassword: e2eAdminPassword,
 			},
 			Pools: map[string]pgdoormanv1alpha1.PoolSpec{
 				"app": {

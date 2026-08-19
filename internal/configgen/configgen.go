@@ -94,3 +94,21 @@ func Generate(spec *v1alpha1.PgDoormanSpec, poolerPort, metricsPort int, passwor
 func PasswordKey(poolName, kind, username string) string {
 	return poolName + "/" + kind + "/" + username
 }
+
+// EnsureAdminPassword injects fallback as the admin password when the spec
+// provides neither adminPassword nor adminPasswordSecretRef (already resolved
+// into passwords). A fixed default would let any pod on the cluster network
+// log in to the admin console on the pooler port.
+func EnsureAdminPassword(spec *v1alpha1.PgDoormanSpec, passwords map[string]string, fallback string) map[string]string {
+	if _, ok := passwords[AdminPasswordKey]; ok {
+		return passwords
+	}
+	if spec.General != nil && spec.General.AdminPassword != "" {
+		return passwords
+	}
+	if passwords == nil {
+		passwords = make(map[string]string, 1)
+	}
+	passwords[AdminPasswordKey] = fallback
+	return passwords
+}
