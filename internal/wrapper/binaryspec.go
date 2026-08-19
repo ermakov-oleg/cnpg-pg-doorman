@@ -21,6 +21,9 @@ type BinarySpec struct {
 	CABundle string            `json:"caBundle,omitempty"`
 }
 
+// ParseBinarySpec unmarshals a binary spec from JSON bytes, validating
+// that URL and SHA256 digests are present. The spec arrives via the
+// controller-owned Secret and is trusted by the wrapper.
 func ParseBinarySpec(data []byte) (*BinarySpec, error) {
 	var spec BinarySpec
 	if err := json.Unmarshal(data, &spec); err != nil {
@@ -35,12 +38,14 @@ func ParseBinarySpec(data []byte) (*BinarySpec, error) {
 	return &spec, nil
 }
 
+// FileSHA256 computes the hex-encoded SHA256 digest of a file at path.
 func FileSHA256(path string) (string, error) {
+	//nolint:gosec // callers pass fixed wrapper-owned paths
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err

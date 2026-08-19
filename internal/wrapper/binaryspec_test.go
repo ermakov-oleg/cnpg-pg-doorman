@@ -26,6 +26,9 @@ func TestParseBinarySpecRejectsInvalid(t *testing.T) {
 	if _, err := ParseBinarySpec([]byte(`{"sha256":{"amd64":"aa"}}`)); err == nil {
 		t.Fatal("expected error on missing url")
 	}
+	if _, err := ParseBinarySpec([]byte(`{"url":"https://x"}`)); err == nil {
+		t.Fatal("expected error on missing sha256 digests")
+	}
 }
 
 func TestFileSHA256(t *testing.T) {
