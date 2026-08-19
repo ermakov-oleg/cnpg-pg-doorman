@@ -5,7 +5,7 @@ import (
 
 	machineryapi "github.com/cloudnative-pg/machinery/pkg/api"
 
-	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/api/v1alpha1"
 )
 
 func TestCollectSecretNames_WithAdminPasswordSecret(t *testing.T) {

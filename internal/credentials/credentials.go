@@ -10,8 +10,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/configgen"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/api/v1alpha1"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/configgen"
 )
 
 // ExtractSecretValue reads a value from a Secret referenced by SecretKeySelector.

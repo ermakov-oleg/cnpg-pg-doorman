@@ -9,7 +9,7 @@ import (
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/decoder"
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/object"
 
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/config"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/config"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"

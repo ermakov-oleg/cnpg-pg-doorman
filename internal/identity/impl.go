@@ -5,7 +5,7 @@ import (
 
 	"github.com/cloudnative-pg/cnpg-i/pkg/identity"
 
-	"github.com/o-ermakov/cnpg-pg-doorman/pkg/metadata"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/pkg/metadata"
 )
 
 type Implementation struct {

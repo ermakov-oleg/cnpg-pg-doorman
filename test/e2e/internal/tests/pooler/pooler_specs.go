@@ -19,11 +19,11 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	pgdoormanv1alpha1 "github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
-	internalClient "github.com/o-ermakov/cnpg-pg-doorman/test/e2e/internal/client"
-	"github.com/o-ermakov/cnpg-pg-doorman/test/e2e/internal/cluster"
-	"github.com/o-ermakov/cnpg-pg-doorman/test/e2e/internal/command"
-	"github.com/o-ermakov/cnpg-pg-doorman/test/e2e/internal/namespace"
+	pgdoormanv1alpha1 "github.com/ermakov-oleg/cnpg-pg-doorman/api/v1alpha1"
+	internalClient "github.com/ermakov-oleg/cnpg-pg-doorman/test/e2e/internal/client"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/test/e2e/internal/cluster"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/test/e2e/internal/command"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/test/e2e/internal/namespace"
 )
 
 // createClusterAndWait creates a PgDoorman CR + Cluster and waits for readiness.

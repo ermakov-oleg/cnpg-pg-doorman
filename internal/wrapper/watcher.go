@@ -9,7 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/api/v1alpha1"
 )
 
 // ConfigGenerator generates pg_doorman YAML config from a PgDoorman spec.

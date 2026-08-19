@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	pgdoormanv1alpha1 "github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
+	pgdoormanv1alpha1 "github.com/ermakov-oleg/cnpg-pg-doorman/api/v1alpha1"
 )
 
 // e2eAdminPassword is provided via a Secret referenced from every fixture CR:

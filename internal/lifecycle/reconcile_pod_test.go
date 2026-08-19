@@ -7,7 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/config"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/config"
 )
 
 func testCluster() *cnpgv1.Cluster {

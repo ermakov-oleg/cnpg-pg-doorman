@@ -6,8 +6,8 @@ import (
 	"github.com/cloudnative-pg/cnpg-i/pkg/operator"
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/decoder"
 
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/config"
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/metrics"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/config"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/metrics"
 )
 
 func (i Implementation) ValidateClusterCreate(

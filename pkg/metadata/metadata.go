@@ -10,9 +10,9 @@ var Data = identity.GetPluginMetadataResponse{
 	Name:          PluginName,
 	Version:       "0.2.0", // x-release-please-version
 	DisplayName:   "PgDoorman",
-	ProjectUrl:    "https://github.com/o-ermakov/cnpg-pg-doorman",
-	RepositoryUrl: "https://github.com/o-ermakov/cnpg-pg-doorman",
+	ProjectUrl:    "https://github.com/ermakov-oleg/cnpg-pg-doorman",
+	RepositoryUrl: "https://github.com/ermakov-oleg/cnpg-pg-doorman",
 	License:       "Apache-2.0",
-	LicenseUrl:    "https://github.com/o-ermakov/cnpg-pg-doorman/blob/main/LICENSE",
+	LicenseUrl:    "https://github.com/ermakov-oleg/cnpg-pg-doorman/blob/main/LICENSE",
 	Maturity:      "alpha",
 }

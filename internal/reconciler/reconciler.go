@@ -16,10 +16,10 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/config"
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/metrics"
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/specs"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/api/v1alpha1"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/config"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/metrics"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/specs"
 )
 
 // Implementation implements the ReconcilerHooks service.

@@ -7,8 +7,8 @@ import (
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/decoder"
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/object"
 
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/config"
-	"github.com/o-ermakov/cnpg-pg-doorman/pkg/metadata"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/config"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/pkg/metadata"
 )
 
 func (i Implementation) MutateCluster(

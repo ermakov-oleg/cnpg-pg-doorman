@@ -7,7 +7,7 @@ import (
 	machineryapi "github.com/cloudnative-pg/machinery/pkg/api"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/api/v1alpha1"
 )
 
 func TestBuildRole_CRDRuleOnly(t *testing.T) {

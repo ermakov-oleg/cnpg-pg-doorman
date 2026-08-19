@@ -22,11 +22,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
-	pluginIdentity "github.com/o-ermakov/cnpg-pg-doorman/internal/identity"
-	pluginLifecycle "github.com/o-ermakov/cnpg-pg-doorman/internal/lifecycle"
-	pluginOperator "github.com/o-ermakov/cnpg-pg-doorman/internal/operator"
-	pluginReconciler "github.com/o-ermakov/cnpg-pg-doorman/internal/reconciler"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/api/v1alpha1"
+	pluginIdentity "github.com/ermakov-oleg/cnpg-pg-doorman/internal/identity"
+	pluginLifecycle "github.com/ermakov-oleg/cnpg-pg-doorman/internal/lifecycle"
+	pluginOperator "github.com/ermakov-oleg/cnpg-pg-doorman/internal/operator"
+	pluginReconciler "github.com/ermakov-oleg/cnpg-pg-doorman/internal/reconciler"
 )
 
 var scheme = runtime.NewScheme()

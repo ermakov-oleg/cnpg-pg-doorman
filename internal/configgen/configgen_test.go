@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/wrapper"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/api/v1alpha1"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/wrapper"
 
 	"gopkg.in/yaml.v3"
 	"k8s.io/utils/ptr"

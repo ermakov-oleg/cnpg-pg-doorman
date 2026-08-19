@@ -3,7 +3,7 @@ package operator
 import (
 	"testing"
 
-	"github.com/o-ermakov/cnpg-pg-doorman/internal/config"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/config"
 )
 
 func TestValidateConfig_PluginNotEnabled(t *testing.T) {
