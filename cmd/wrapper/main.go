@@ -29,6 +29,7 @@ func main() {
 		Level: wrapper.ParseLogLevel(os.Getenv("LOG_LEVEL")),
 	}))
 	wrapper.SetChildSubreaper(logger)
+	wrapper.CapFileDescriptorLimit(logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
