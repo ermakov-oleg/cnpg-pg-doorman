@@ -251,8 +251,7 @@ Parameters passed via `spec.plugins[].parameters` in the CNPG Cluster:
 | `serverLifetime`   | `5m`        | Backend connection max lifetime     |
 | `shutdownTimeout`  | `10s`       | Graceful shutdown timeout           |
 | `adminUsername`    | `admin`     | Admin console username              |
-| `adminPassword`    | random per pod | Admin console password. When neither this nor `adminPasswordSecretRef` is set, the wrapper generates a random per-pod password. **Use `adminPasswordSecretRef` in production.** |
-| `adminPasswordSecretRef` | —   | Secret reference for admin password (takes precedence over `adminPassword`) |
+| `adminPasswordSecretRef` | —   | Secret reference for the admin console password. When unset, the wrapper generates a random per-pod password. |
 
 #### Prometheus (`spec.prometheus`)
 

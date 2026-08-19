@@ -13,9 +13,18 @@ import (
 	pgdoormanv1alpha1 "github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
 )
 
-// e2eAdminPassword is set explicitly in fixtures: without it the wrapper
-// generates a random per-pod admin password the tests cannot know.
-const e2eAdminPassword = "e2e-admin-password"
+// e2eAdminPassword is provided via a Secret referenced from every fixture CR:
+// without it the wrapper generates a random per-pod admin password the tests
+// cannot know. The plaintext adminPassword API field is deliberately gone.
+const (
+	e2eAdminPassword       = "e2e-admin-password"
+	e2eAdminPasswordSecret = "e2e-admin-password"
+)
+
+// newAdminPasswordSecret creates the Secret backing adminPasswordSecretRef.
+func newAdminPasswordSecret(namespace string) *corev1.Secret {
+	return newPasswordSecret(namespace, e2eAdminPasswordSecret, e2eAdminPassword)
+}
 
 func newPgDoorman(namespace, name string) *pgdoormanv1alpha1.PgDoorman {
 	return &pgdoormanv1alpha1.PgDoorman{
@@ -26,7 +35,12 @@ func newPgDoorman(namespace, name string) *pgdoormanv1alpha1.PgDoorman {
 		Spec: pgdoormanv1alpha1.PgDoormanSpec{
 			General: &pgdoormanv1alpha1.GeneralSpec{
 				WorkerThreads: ptr.To(2),
-				AdminPassword: e2eAdminPassword,
+				AdminPasswordSecretRef: &machineryapi.SecretKeySelector{
+					LocalObjectReference: machineryapi.LocalObjectReference{
+						Name: e2eAdminPasswordSecret,
+					},
+					Key: "password",
+				},
 			},
 			Pools: map[string]pgdoormanv1alpha1.PoolSpec{
 				"app": {

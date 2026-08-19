@@ -309,23 +309,15 @@ func TestEnsureAdminPassword(t *testing.T) {
 	// No spec password and no resolved secret: the random fallback must be
 	// used — a fixed default would let any pod on the cluster network log in
 	// to the admin console.
-	spec := minimalSpec()
-	passwords := EnsureAdminPassword(spec, nil, "random-fallback")
+	passwords := EnsureAdminPassword(nil, "random-fallback")
 	if got := passwords[AdminPasswordKey]; got != "random-fallback" {
 		t.Errorf("admin password = %q, want random fallback", got)
 	}
 
 	// Resolved secretRef password wins over the fallback.
-	passwords = EnsureAdminPassword(spec, map[string]string{AdminPasswordKey: "from-secret"}, "random-fallback")
+	passwords = EnsureAdminPassword(map[string]string{AdminPasswordKey: "from-secret"}, "random-fallback")
 	if got := passwords[AdminPasswordKey]; got != "from-secret" {
 		t.Errorf("admin password = %q, want from-secret", got)
-	}
-
-	// Explicit plaintext spec password wins over the fallback.
-	spec.General = &v1alpha1.GeneralSpec{AdminPassword: "plain"}
-	passwords = EnsureAdminPassword(spec, nil, "random-fallback")
-	if _, ok := passwords[AdminPasswordKey]; ok {
-		t.Error("fallback must not override an explicit spec adminPassword")
 	}
 }
 

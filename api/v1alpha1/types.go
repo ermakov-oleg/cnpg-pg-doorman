@@ -137,15 +137,10 @@ type GeneralSpec struct {
 	// +optional
 	AdminUsername string `json:"adminUsername,omitempty"`
 
-	// AdminPassword is the admin password. Ignored if AdminPasswordSecretRef
-	// is set. When neither is set, the wrapper generates a random per-pod
-	// password: a fixed default would expose the admin console to the whole
-	// cluster network.
-	// +optional
-	AdminPassword string `json:"adminPassword,omitempty"`
-
 	// AdminPasswordSecretRef references a Secret containing the admin password.
-	// Takes precedence over AdminPassword.
+	// There is deliberately no plaintext alternative: a password in the CR
+	// would land in etcd, GitOps repos and manifest backups. When unset, the
+	// wrapper generates a random per-pod password.
 	// +optional
 	AdminPasswordSecretRef *machineryapi.SecretKeySelector `json:"adminPasswordSecretRef,omitempty"`
 }
