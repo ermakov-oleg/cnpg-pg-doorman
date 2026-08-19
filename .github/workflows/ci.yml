@@ -57,10 +57,15 @@ jobs:
       - name: Install Task
         uses: arduino/setup-task@v3.0.0
 
+      # The action's default kind binary can be too old for the kindest/node
+      # image from the Taskfile (containerd config version mismatch), so the
+      # version comes from the same Taskfile vars.
       - name: Install KinD
-        uses: helm/kind-action@v1
-        with:
-          install_only: true
+        run: |
+          KIND_VERSION=$(awk '/^  KIND_VERSION:/ {print $2}' Taskfile.yml)
+          curl -sSLo kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x kind && sudo mv kind /usr/local/bin/kind
+          kind version
 
       # Single source of tool versions: Taskfile.yml vars (tracked by renovate).
       - name: Run E2E tests
