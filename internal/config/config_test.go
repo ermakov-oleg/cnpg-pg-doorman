@@ -401,3 +401,28 @@ func TestValidate_RequestAboveLimit(t *testing.T) {
 		t.Error("memory request above limit must fail validation")
 	}
 }
+
+func TestValidate_ReservedPorts(t *testing.T) {
+	// Ports already bound in a CNPG instance pod: pg_doorman would fail to
+	// bind, the native sidecar would crash-loop and the pod never gets Ready.
+	for _, port := range []int{5432, 8000, 9187, 8081} {
+		cfg := &PluginConfiguration{
+			PoolerPort:   port,
+			MetricsPort:  9127,
+			ConfigName:   "my-config",
+			SidecarImage: "img",
+		}
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("poolerPort=%d must be rejected as reserved", port)
+		}
+		cfg = &PluginConfiguration{
+			PoolerPort:   6432,
+			MetricsPort:  port,
+			ConfigName:   "my-config",
+			SidecarImage: "img",
+		}
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("metricsPort=%d must be rejected as reserved", port)
+		}
+	}
+}

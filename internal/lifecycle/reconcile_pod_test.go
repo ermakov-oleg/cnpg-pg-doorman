@@ -68,8 +68,8 @@ func TestInjectSidecarLivenessProbesWrapperNotPooler(t *testing.T) {
 	if httpGet.Path != "/healthz" {
 		t.Errorf("liveness probe path = %q, want /healthz", httpGet.Path)
 	}
-	if got := httpGet.Port.IntValue(); got != wrapperHealthPort {
-		t.Errorf("liveness probe port = %d, want %d", got, wrapperHealthPort)
+	if got := httpGet.Port.IntValue(); got != config.WrapperHealthPort {
+		t.Errorf("liveness probe port = %d, want %d", got, config.WrapperHealthPort)
 	}
 }
 
