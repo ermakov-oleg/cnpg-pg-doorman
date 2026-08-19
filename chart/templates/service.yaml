@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    {{- include "cnpg-pg-doorman.labels" . | nindent 4 }}
+    # CNPG discovers plugin services by this label; the plugin name is fixed.
+    cnpg.io/pluginName: pg-doorman.cnpg.io
+  annotations:
+    cnpg.io/pluginClientSecret: {{ include "cnpg-pg-doorman.fullname" . }}-client-tls
+    cnpg.io/pluginServerSecret: {{ include "cnpg-pg-doorman.fullname" . }}-server-tls
+    cnpg.io/pluginPort: "9090"
+  name: {{ include "cnpg-pg-doorman.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  ports:
+    - port: 9090
+      protocol: TCP
+      targetPort: 9090
+  selector:
+    {{- include "cnpg-pg-doorman.selectorLabels" . | nindent 4 }}

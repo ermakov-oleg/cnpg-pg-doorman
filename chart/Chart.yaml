@@ -1,0 +1,18 @@
+# Version and appVersion are placeholders: the release pipeline overrides them
+# with `helm package --version ${VERSION#v} --app-version ${VERSION}`.
+apiVersion: v2
+name: cnpg-pg-doorman
+description: CloudNativePG plugin that adds a pg_doorman connection pooler sidecar to CNPG clusters
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">= 1.29.0-0"
+home: https://github.com/ermakov-oleg/cnpg-pg-doorman
+sources:
+  - https://github.com/ermakov-oleg/cnpg-pg-doorman
+keywords:
+  - cloudnative-pg
+  - cnpg
+  - pg_doorman
+  - postgresql
+  - connection-pooler

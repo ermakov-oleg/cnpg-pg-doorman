@@ -1,0 +1,41 @@
+# Bootstrap chain: a self-signed CA and an Issuer backed by it. Both leaf
+# certificates are issued from the CA so peers can verify by CA instead of
+# pinning exact leafs, which breaks on rotation.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  labels:
+    {{- include "cnpg-pg-doorman.labels" . | nindent 4 }}
+  name: selfsigned-issuer
+  namespace: {{ .Release.Namespace }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  labels:
+    {{- include "cnpg-pg-doorman.labels" . | nindent 4 }}
+  name: {{ include "cnpg-pg-doorman.fullname" . }}-ca
+  namespace: {{ .Release.Namespace }}
+spec:
+  secretName: {{ include "cnpg-pg-doorman.fullname" . }}-ca
+  commonName: {{ include "cnpg-pg-doorman.fullname" . }}-ca
+  isCA: true
+  duration: 87600h # 10y
+  renewBefore: 8760h # 1y
+  issuerRef:
+    name: selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  labels:
+    {{- include "cnpg-pg-doorman.labels" . | nindent 4 }}
+  name: {{ include "cnpg-pg-doorman.fullname" . }}-ca-issuer
+  namespace: {{ .Release.Namespace }}
+spec:
+  ca:
+    secretName: {{ include "cnpg-pg-doorman.fullname" . }}-ca
