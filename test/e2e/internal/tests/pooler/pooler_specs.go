@@ -179,16 +179,20 @@ var _ = Describe("pg_doorman pooler", func() {
 
 					By("checking env vars")
 					var hasConfigName, hasNamespace bool
+					// The wrapper has no kube client: it consumes the rendered
+					// config mounted from the per-cluster Secret.
 					for _, env := range c.Env {
-						if env.Name == "PG_DOORMAN_CONFIG_NAME" {
+						if env.Name == "CONFIG_SOURCE" {
 							hasConfigName = true
 						}
-						if env.Name == "PG_DOORMAN_CONFIG_NAMESPACE" {
+					}
+					for _, m := range c.VolumeMounts {
+						if m.Name == "pg-doorman-config" {
 							hasNamespace = true
 						}
 					}
-					Expect(hasConfigName).To(BeTrue(), "PG_DOORMAN_CONFIG_NAME env not found")
-					Expect(hasNamespace).To(BeTrue(), "PG_DOORMAN_CONFIG_NAMESPACE env not found")
+					Expect(hasConfigName).To(BeTrue(), "CONFIG_SOURCE env not found")
+					Expect(hasNamespace).To(BeTrue(), "rendered config volume mount not found")
 
 					By("checking security context")
 					Expect(c.SecurityContext).NotTo(BeNil())
@@ -542,7 +546,7 @@ var _ = Describe("pg_doorman pooler", func() {
 			return getSidecarLogs(ctx, clientset, ns.Name, podName)
 		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(
 			And(
-				ContainSubstring(`"secretHashChanged":true`),
+				ContainSubstring("rendered config changed"),
 				ContainSubstring("config reloaded successfully"),
 			),
 		)
