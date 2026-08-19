@@ -20,6 +20,10 @@ const (
 	initialBackoff         = 1 * time.Second
 	maxBackoff             = 30 * time.Second
 	backoffMultiplier      = 2
+	// backoffResetUptime: a process that lived this long proves the previous
+	// start was viable — reset the penalty instead of accumulating it across
+	// rare crashes spread over weeks.
+	backoffResetUptime = 60 * time.Second
 	defaultShutdownTimeout = 10 * time.Second
 	shutdownWaitMargin     = 5 * time.Second
 )
@@ -118,12 +122,21 @@ func (p *Process) Reload() error {
 	return p.cmd.Process.Signal(syscall.SIGHUP)
 }
 
+// backoffAfterExit returns the delay before the next start attempt.
+func backoffAfterExit(current, uptime time.Duration) time.Duration {
+	if uptime >= backoffResetUptime {
+		return initialBackoff
+	}
+	return min(current*backoffMultiplier, maxBackoff)
+}
+
 // RunWithRestart runs pg_doorman and restarts it on crash with exponential backoff.
-// Stops when the context is canceled.
+// The backoff resets after a sufficiently long uptime. Stops when the context is canceled.
 func (p *Process) RunWithRestart(ctx context.Context) error {
 	backoff := initialBackoff
 
 	for {
+		startedAt := time.Now()
 		if err := p.Start(ctx); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -143,12 +156,13 @@ func (p *Process) RunWithRestart(ctx context.Context) error {
 			return ctx.Err()
 		}
 
-		p.logger.Error("pg_doorman exited unexpectedly, restarting", "error", err, "backoff", backoff)
+		uptime := time.Since(startedAt)
+		backoff = backoffAfterExit(backoff, uptime)
+		p.logger.Error("pg_doorman exited unexpectedly, restarting", "error", err, "backoff", backoff, "uptime", uptime)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(backoff):
 		}
-		backoff = min(backoff*backoffMultiplier, maxBackoff)
 	}
 }
