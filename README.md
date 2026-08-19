@@ -327,6 +327,8 @@ The plugin image carries the pg_doorman binaries for every supported architectur
 
 This requires the plugin's binary delivery endpoint (port `9091`, served by every plugin replica) to be reachable from every PostgreSQL pod, and the plugin server to be started with `--binary-base-url` (the URL published to wrappers via `binary.json`) and `--binary-ca-file` (the CA bundle wrappers use to verify that endpoint's TLS certificate) — both are set by the shipped manifests and Helm chart, pointing at the plugin's own Service.
 
+The rendered config Secret is the trust root of this flow: the download URL, the per-arch sha256 digests, and the CA bundle the sidecar verifies the endpoint against all come from it, so a principal able to write Secrets in a cluster's namespace can point the sidecar at an arbitrary binary and have it executed — restrict write access to Secrets in those namespaces accordingly.
+
 Wrapper metrics for this flow: `pg_doorman_wrapper_binary_upgrades_total{result}` (handover outcomes) and `pg_doorman_wrapper_binary_stale` (1 while the installed binary does not yet match `binary.json`).
 
 ### Client-facing caveats
