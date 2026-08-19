@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	pgDoormanBinary        = "/usr/bin/pg_doorman"
+	// PgDoormanBinary is the pg_doorman path inside the sidecar image.
+	PgDoormanBinary        = "/usr/bin/pg_doorman"
 	initialBackoff         = 1 * time.Second
 	maxBackoff             = 30 * time.Second
 	backoffMultiplier      = 2
@@ -35,7 +36,7 @@ type Process struct {
 func NewProcess(configPath string, logger *slog.Logger) *Process {
 	return &Process{
 		configPath: configPath,
-		binary:     pgDoormanBinary,
+		binary:     PgDoormanBinary,
 		waitMargin: shutdownWaitMargin,
 		logger:     logger,
 	}

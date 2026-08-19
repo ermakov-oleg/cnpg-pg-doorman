@@ -105,12 +105,14 @@ func main() {
 		return credentials.CollectSecretVersions(ctx, cl, spec, ns)
 	}
 
+	testConfig := wrapper.NewBinaryConfigTester(wrapper.PgDoormanBinary)
+
 	// Generate initial config
 	var initialCfg wrapper.InitialConfig
-	gen, secretHash, err := generateAndWriteConfig(ctx, cl, configName, namespace, generate, secretHashFn, logger)
+	gen, secretHash, err := generateAndWriteConfig(ctx, cl, configName, namespace, generate, secretHashFn, testConfig, logger)
 	if err != nil {
 		logger.Error("initial config generation failed, waiting", "error", err)
-		initialCfg = wrapper.WaitForCRDConfig(ctx, cl, configName, namespace, runtimeConfig, generate, secretHashFn, pollIntervalSec, logger)
+		initialCfg = wrapper.WaitForCRDConfig(ctx, cl, configName, namespace, runtimeConfig, generate, secretHashFn, testConfig, pollIntervalSec, logger)
 		if ctx.Err() != nil {
 			os.Exit(0)
 		}
@@ -156,6 +158,7 @@ func generateAndWriteConfig(
 	configName, namespace string,
 	generate wrapper.ConfigGenerator,
 	secretHashFn wrapper.SecretHashFunc,
+	testConfig wrapper.ConfigTester,
 	logger *slog.Logger,
 ) (int64, string, error) {
 	var pgDoorman v1alpha1.PgDoorman
@@ -172,7 +175,15 @@ func generateAndWriteConfig(
 		return 0, "", err
 	}
 
-	if err := wrapper.AtomicWrite(runtimeConfig, data); err != nil {
+	candidate := runtimeConfig + wrapper.CandidateSuffix
+	if err := wrapper.AtomicWrite(candidate, data); err != nil {
+		return 0, "", err
+	}
+	if err := testConfig(ctx, candidate); err != nil {
+		_ = os.Remove(candidate)
+		return 0, "", err
+	}
+	if err := os.Rename(candidate, runtimeConfig); err != nil {
 		return 0, "", err
 	}
 

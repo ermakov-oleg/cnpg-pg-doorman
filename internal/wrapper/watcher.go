@@ -3,6 +3,7 @@ package wrapper
 import (
 	"context"
 	"log/slog"
+	"os"
 	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -17,16 +18,22 @@ type ConfigGenerator func(ctx context.Context, spec *v1alpha1.PgDoormanSpec) ([]
 // Returns empty string if no secrets are referenced.
 type SecretHashFunc func(ctx context.Context, spec *v1alpha1.PgDoormanSpec, namespace string) (string, error)
 
+// Reloader asks the running pg_doorman process to re-read its config.
+type Reloader interface {
+	Reload() error
+}
+
 // CRDWatcher polls PgDoorman CR for changes and regenerates config.
 type CRDWatcher struct {
 	client         client.Client
 	configName     string
 	namespace      string
 	runtimePath    string
-	process        *Process
+	process        Reloader
 	logger         *slog.Logger
 	generate       ConfigGenerator
 	secretHash     SecretHashFunc
+	testConfig     ConfigTester
 	lastGen        int64
 	lastSecretHash string
 }
@@ -38,7 +45,7 @@ func NewCRDWatcher(
 	cl client.Client,
 	configName, namespace string,
 	runtimePath string,
-	process *Process,
+	process Reloader,
 	generate ConfigGenerator,
 	secretHashFn SecretHashFunc,
 	logger *slog.Logger,
@@ -53,6 +60,7 @@ func NewCRDWatcher(
 		process:        process,
 		generate:       generate,
 		secretHash:     secretHashFn,
+		testConfig:     NewBinaryConfigTester(PgDoormanBinary),
 		logger:         logger,
 		lastGen:        initialGeneration,
 		lastSecretHash: initialSecretHash,
@@ -118,8 +126,24 @@ func (w *CRDWatcher) check(ctx context.Context) {
 		return
 	}
 
-	if err := AtomicWrite(w.runtimePath, data); err != nil {
-		w.logger.Error("failed to write config", "error", err)
+	// Validate the candidate with the real pg_doorman binary before it ever
+	// replaces the runtime file: SIGHUP delivery does not mean the config was
+	// accepted, and a rejected file left on disk would crash-loop the process
+	// on any later restart.
+	candidate := w.runtimePath + CandidateSuffix
+	if err := AtomicWrite(candidate, data); err != nil {
+		w.logger.Error("failed to write candidate config", "error", err)
+		return
+	}
+	if w.testConfig != nil {
+		if err := w.testConfig(ctx, candidate); err != nil {
+			w.logger.Error("pg_doorman rejected generated config, keeping old config", "error", err)
+			_ = os.Remove(candidate)
+			return
+		}
+	}
+	if err := os.Rename(candidate, w.runtimePath); err != nil {
+		w.logger.Error("failed to replace config", "error", err)
 		return
 	}
 
@@ -150,6 +174,7 @@ func WaitForCRDConfig(
 	runtimePath string,
 	generate ConfigGenerator,
 	secretHashFn SecretHashFunc,
+	testConfig ConfigTester,
 	pollSec int,
 	logger *slog.Logger,
 ) InitialConfig {
@@ -178,8 +203,20 @@ func WaitForCRDConfig(
 				continue
 			}
 
-			if err := AtomicWrite(runtimePath, data); err != nil {
-				logger.Warn("failed to write config", "error", err)
+			candidate := runtimePath + CandidateSuffix
+			if err := AtomicWrite(candidate, data); err != nil {
+				logger.Warn("failed to write candidate config", "error", err)
+				continue
+			}
+			if testConfig != nil {
+				if err := testConfig(ctx, candidate); err != nil {
+					logger.Warn("pg_doorman rejected generated config", "error", err)
+					_ = os.Remove(candidate)
+					continue
+				}
+			}
+			if err := os.Rename(candidate, runtimePath); err != nil {
+				logger.Warn("failed to replace config", "error", err)
 				continue
 			}
 
