@@ -30,11 +30,21 @@ func findSuccessorPid(binaryPath string, excludePid int) (int, bool) {
 	return 0, false
 }
 
+// validateConfigShortFlag is the short form of ValidateConfigFlag; both mark a
+// validation run of the same binary, which must never be adopted.
+const validateConfigShortFlag = "-t"
+
 // runsBinary reports whether the process described by procDir runs binaryPath as
 // a pooler. Config validation runs the same binary, so it is excluded explicitly.
 func runsBinary(procDir, binaryPath string) bool {
 	args, haveArgs := readCmdline(procDir)
-	if haveArgs && slices.Contains(args, ValidateConfigFlag) {
+	// A serving pg_doorman always has a readable argv; an empty cmdline means a
+	// zombie or a process inside execve, and adopting one would let a config
+	// validator child pass the exe-link check below.
+	if !haveArgs {
+		return false
+	}
+	if slices.Contains(args, ValidateConfigFlag) || slices.Contains(args, validateConfigShortFlag) {
 		return false
 	}
 	// A binary replaced on disk keeps the " (deleted)" suffix on its exe link.
@@ -45,7 +55,7 @@ func runsBinary(procDir, binaryPath string) bool {
 	}
 	// The exe of a shebang script is its interpreter, and the kernel moves the
 	// script path to argv[1]; only the test doubles are scripts.
-	return haveArgs && slices.Contains(args[:min(2, len(args))], binaryPath)
+	return slices.Contains(args[:min(2, len(args))], binaryPath)
 }
 
 func readCmdline(procDir string) ([]string, bool) {

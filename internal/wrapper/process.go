@@ -54,9 +54,13 @@ type Process struct {
 	// upgradeRequested marks that the next process exit is (probably) the old
 	// binary handing over to its re-exec'd successor, not a crash.
 	upgradeRequested bool
-	successorTimeout time.Duration
-	mu               sync.Mutex
-	logger           *slog.Logger
+	// upgradeRequestedAt bounds the lifetime of upgradeRequested: an upgrade
+	// aborted by pg_doorman itself (config rejected, successor never became
+	// ready) leaves the old process running and the flag set.
+	upgradeRequestedAt time.Time
+	successorTimeout   time.Duration
+	mu                 sync.Mutex
+	logger             *slog.Logger
 }
 
 func NewProcess(configPath string, logger *slog.Logger) *Process {
@@ -135,14 +139,19 @@ func (p *Process) signalLocked(sig syscall.Signal) error {
 	return syscall.Kill(pid, sig)
 }
 
-func (p *Process) Wait() error {
+func (p *Process) Wait() error { return p.waitCtx(context.Background()) }
+
+// waitCtx blocks until the supervised process exits, giving up when ctx is done
+// (the adopted process is polled, so cancellation cannot be delivered by the
+// runtime as it is for an exec.Cmd child).
+func (p *Process) waitCtx(ctx context.Context) error {
 	p.mu.Lock()
 	cmd := p.cmd
 	adopted := p.adoptedPid
 	p.mu.Unlock()
 
 	if adopted != 0 {
-		err := waitPid(adopted)
+		err := waitPid(ctx, adopted)
 		// Forget the pid we just reaped: a SIGKILL timer armed by
 		// terminateIfAdopted must not fire at whoever reuses that pid next.
 		p.mu.Lock()
@@ -161,7 +170,7 @@ func (p *Process) Wait() error {
 // waitPid blocks until the adopted process exits. Only the adopted successor is
 // waited this way: a global wait4(-1) reaper would steal exit statuses from the
 // exec.Cmd users, such as the config validator.
-func waitPid(pid int) error {
+func waitPid(ctx context.Context, pid int) error {
 	var ws syscall.WaitStatus
 	for {
 		_, err := syscall.Wait4(pid, &ws, 0, nil)
@@ -171,7 +180,7 @@ func waitPid(pid int) error {
 		if errors.Is(err, syscall.ECHILD) {
 			// Not our child: reporting an exit now would restart pg_doorman
 			// while it is still serving. Wait for it to actually disappear.
-			return waitUntilGone(pid)
+			return waitUntilGone(ctx, pid)
 		}
 		if err != nil {
 			return fmt.Errorf("wait4 pid %d: %w", pid, err)
@@ -184,16 +193,20 @@ func waitPid(pid int) error {
 	return nil
 }
 
-// waitUntilGone polls liveness until the process no longer exists. Cancellation
-// is handled by the caller's terminateIfAdopted, which kills pid and thereby
-// ends this loop.
-func waitUntilGone(pid int) error {
+// waitUntilGone polls liveness until the process no longer exists, or until ctx
+// is done: on shutdown the caller's terminateIfAdopted kills pid anyway, but the
+// poll must not outlive the supervisor if the kill does not land.
+func waitUntilGone(ctx context.Context, pid int) error {
 	for {
 		err := syscall.Kill(pid, 0)
 		if errors.Is(err, syscall.ESRCH) {
 			return fmt.Errorf("%w: pid %d disappeared", errAdoptedNotChild, pid)
 		}
-		time.Sleep(adoptedLivenessInterval)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(adoptedLivenessInterval):
+		}
 	}
 }
 
@@ -256,21 +269,33 @@ func (p *Process) Upgrade() error {
 		return err
 	}
 	p.upgradeRequested = true
+	p.upgradeRequestedAt = time.Now()
 	p.logger.Info("sent SIGUSR2 to pg_doorman to start binary upgrade", "pid", p.pidLocked())
 	return nil
 }
 
+// consumeUpgradeRequest reports whether the exit just observed can be a binary
+// upgrade handover. A request older than the whole handover window (drain plus
+// successor search) is dropped: pg_doorman aborted the upgrade and kept
+// running, so this exit is a genuine one and must not burn a successor search.
 func (p *Process) consumeUpgradeRequest() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	requested := p.upgradeRequested
 	p.upgradeRequested = false
-	return requested
+	if !requested {
+		return false
+	}
+	if age := time.Since(p.upgradeRequestedAt); age > p.waitDelay()+p.successorTimeout {
+		p.logger.Warn("ignoring stale binary upgrade request", "age", age)
+		return false
+	}
+	return true
 }
 
 // adoptSuccessor looks for the re-exec'd pg_doorman for a few seconds after
 // the old process exited (the successor reparents to us at that moment).
-func (p *Process) adoptSuccessor(oldPid int) bool {
+func (p *Process) adoptSuccessor(ctx context.Context, oldPid int) bool {
 	deadline := time.Now().Add(p.successorTimeout)
 	for {
 		if pid, ok := findSuccessorPid(p.binary, oldPid); ok {
@@ -284,7 +309,11 @@ func (p *Process) adoptSuccessor(oldPid int) bool {
 		if time.Now().After(deadline) {
 			return false
 		}
-		time.Sleep(successorPollInterval)
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(successorPollInterval):
+		}
 	}
 }
 
@@ -339,7 +368,7 @@ func (p *Process) RunWithRestart(ctx context.Context) error {
 			// exec.CommandContext handles cancellation for a direct child; the
 			// adopted process needs the SIGTERM/SIGKILL sequence arranged here.
 			stopTerm := context.AfterFunc(ctx, p.terminateIfAdopted)
-			err := p.Wait()
+			err := p.waitCtx(ctx)
 			stopTerm()
 
 			if ctx.Err() != nil {
@@ -347,8 +376,15 @@ func (p *Process) RunWithRestart(ctx context.Context) error {
 			}
 
 			if p.consumeUpgradeRequest() {
-				if p.adoptSuccessor(pid) {
+				if p.adoptSuccessor(ctx, pid) {
 					BinaryUpgradesTotal.WithLabelValues("success").Inc()
+					// Post-handover config resync: the successor was spawned
+					// from the config snapshot the old process held, while the
+					// runtime config file is always the last materialized good
+					// config — a reload during the drain would have been lost.
+					if err := p.Reload(); err != nil {
+						p.logger.Warn("post-upgrade config resync failed", "error", err)
+					}
 					// The handover is not a restart: uptime accounting starts
 					// over for the adopted process, the backoff is untouched.
 					startedAt = time.Now()

@@ -19,10 +19,15 @@ import (
 
 // fake pg_doorman: on USR2 it spawns a detached copy of itself (the
 // "successor"), then exits 0 — mirroring the upstream binary upgrade flow.
+// The readiness flag mirrors the upstream handover: the old process exits only
+// after the successor reported itself ready, so the supervisor never adopts a
+// process that has not installed its signal handlers yet.
 const upgradeScript = `#!/bin/sh
-echo $$ >> "$PID_LOG"
 trap 'exit 0' TERM
-trap '"$0" "$@" & exit 0' USR2
+trap 'echo $$ >> "$HUP_LOG"' HUP
+trap 'rm -f "$READY_FLAG"; "$0" "$@" & while [ ! -f "$READY_FLAG" ]; do sleep 0.05; done; exit 0' USR2
+echo $$ >> "$PID_LOG"
+touch "$READY_FLAG"
 while :; do sleep 0.1; done
 `
 
@@ -54,6 +59,9 @@ func TestUpgradeAdoptsSuccessor(t *testing.T) {
 	// The successor writes its pid, the old process exits, adoption follows.
 	waitForPidCount(t, pidLog, 2)
 	adopted := waitForNewPid(t, p, firstPid)
+	// The successor inherited a config snapshot: the supervisor resyncs it.
+	waitForPidCount(t, hupLogFor(pidLog), 1)
+	hups := readPids(t, hupLogFor(pidLog))
 	cancel()
 	<-done
 
@@ -62,6 +70,63 @@ func TestUpgradeAdoptsSuccessor(t *testing.T) {
 	}
 	if pids := readPids(t, pidLog); pids[1] != adopted {
 		t.Errorf("adopted pid %d is not the successor %d", adopted, pids[1])
+	}
+	if hups[0] != adopted {
+		t.Errorf("post-handover SIGHUP went to pid %d, want the adopted %d", hups[0], adopted)
+	}
+}
+
+// An upgrade pg_doorman aborted itself (rejected config, successor never became
+// ready) leaves the old process running: a later, unrelated exit must restart
+// normally instead of spending the successor search on a handover that never was.
+func TestStaleUpgradeRequestIsNotTreatedAsHandover(t *testing.T) {
+	p := NewProcess(filepath.Join(t.TempDir(), "config.yaml"), testLogger())
+
+	p.mu.Lock()
+	p.upgradeRequested = true
+	p.upgradeRequestedAt = time.Now().Add(-time.Hour)
+	p.mu.Unlock()
+	if p.consumeUpgradeRequest() {
+		t.Error("stale upgrade request must be ignored")
+	}
+
+	p.mu.Lock()
+	p.upgradeRequested = true
+	p.upgradeRequestedAt = time.Now()
+	p.mu.Unlock()
+	if !p.consumeUpgradeRequest() {
+		t.Error("fresh upgrade request must be honored")
+	}
+	if p.consumeUpgradeRequest() {
+		t.Error("upgrade request must be consumed exactly once")
+	}
+}
+
+// Config validation runs the same binary; adopting such a child would leave the
+// supervisor watching a process that exits within seconds.
+func TestFindSuccessorPidSkipsConfigValidation(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "pg_doorman")
+	if err := os.WriteFile(script, []byte(noSuccessorScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PID_LOG", filepath.Join(dir, "pids"))
+
+	for _, flag := range []string{ValidateConfigFlag, validateConfigShortFlag} {
+		cmd := exec.Command(script, filepath.Join(dir, "config.yaml"), flag) //nolint:gosec // test double
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		waitForPidCount(t, filepath.Join(dir, "pids"), 1)
+		found, ok := findSuccessorPid(script, 0)
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		if err := os.Remove(filepath.Join(dir, "pids")); err != nil {
+			t.Fatal(err)
+		}
+		if ok {
+			t.Errorf("flag %s: validation run adopted as successor (pid %d)", flag, found)
+		}
 	}
 }
 
@@ -135,7 +200,7 @@ func TestWaitUntilGoneReturnsOnlyAfterProcessDisappears(t *testing.T) {
 	pid := cmd.Process.Pid
 
 	done := make(chan error, 1)
-	go func() { done <- waitUntilGone(pid) }()
+	go func() { done <- waitUntilGone(context.Background(), pid) }()
 
 	select {
 	case err := <-done:
@@ -206,11 +271,15 @@ func newUpgradeProcess(t *testing.T, body string) (*Process, string) {
 		t.Fatal(err)
 	}
 	t.Setenv("PID_LOG", pidLog)
+	t.Setenv("HUP_LOG", hupLogFor(pidLog))
+	t.Setenv("READY_FLAG", filepath.Join(dir, "ready"))
 
 	p := NewProcess(filepath.Join(dir, "config.yaml"), testLogger())
 	p.binary = script
 	return p, pidLog
 }
+
+func hupLogFor(pidLog string) string { return filepath.Join(filepath.Dir(pidLog), "hups") }
 
 // waitForNewPid waits until the supervised pid differs from prev and is set.
 func waitForNewPid(t *testing.T, p *Process, prev int) int {
