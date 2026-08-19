@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -61,6 +62,9 @@ func RenderedSecretName(clusterName string) string {
 type RenderedConfigReconciler struct {
 	client.Client
 	Recorder record.EventRecorder
+	// Binary is the desired pg_doorman binary published to wrappers via the
+	// rendered Secret; nil disables in-place binary delivery.
+	Binary *wrapper.BinarySpec
 }
 
 // Reconcile renders the config for one PgDoorman.
@@ -315,6 +319,14 @@ func (r *RenderedConfigReconciler) upsertSecret(
 		},
 	}
 
+	binaryJSON, err := r.binarySpecJSON()
+	if err != nil {
+		return err
+	}
+	if binaryJSON != nil {
+		desired.Data[wrapper.BinarySpecKey] = binaryJSON
+	}
+
 	var existing corev1.Secret
 	if err := r.Get(ctx, client.ObjectKeyFromObject(desired), &existing); err != nil {
 		if !apierrs.IsNotFound(err) {
@@ -328,7 +340,8 @@ func (r *RenderedConfigReconciler) upsertSecret(
 	}
 
 	if string(existing.Data[ConfigKey]) == string(data) &&
-		string(existing.Data[generatedAdminPasswordKey]) == generatedAdmin {
+		string(existing.Data[generatedAdminPasswordKey]) == generatedAdmin &&
+		string(existing.Data[wrapper.BinarySpecKey]) == string(binaryJSON) {
 		return nil
 	}
 
@@ -340,6 +353,13 @@ func (r *RenderedConfigReconciler) upsertSecret(
 	}
 	existing.Labels[ClusterLabel] = cluster.Name
 	return r.Patch(ctx, &existing, patch)
+}
+
+func (r *RenderedConfigReconciler) binarySpecJSON() ([]byte, error) {
+	if r.Binary == nil {
+		return nil, nil
+	}
+	return json.Marshal(r.Binary)
 }
 
 func (r *RenderedConfigReconciler) eventf(obj client.Object, reason, format string, args ...any) {
