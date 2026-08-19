@@ -92,6 +92,41 @@ func TestRunWithRestartKillsProcessIgnoringSigterm(t *testing.T) {
 	}
 }
 
+func TestSignalsGoToTrackedPid(t *testing.T) {
+	dir := t.TempDir()
+	ready := filepath.Join(dir, "ready")
+	hup := filepath.Join(dir, "hup")
+	script := writeScript(t, dir,
+		"#!/bin/sh\ntrap 'touch "+hup+"' HUP\ntrap 'exit 0' TERM\ntouch "+ready+"\nwhile :; do sleep 0.05; done\n")
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	p := NewProcess(filepath.Join(dir, "config.yaml"), logger)
+	p.binary = script
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := p.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitForFile(t, ready)
+
+	if p.Pid() == 0 {
+		t.Fatal("Pid() returned 0 for a running process")
+	}
+
+	if err := p.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	waitForFile(t, hup)
+
+	if err := p.Restart(); err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	if err := p.Wait(); err != nil {
+		t.Fatalf("Wait after graceful SIGTERM: %v", err)
+	}
+}
+
 func TestWaitDelay(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 

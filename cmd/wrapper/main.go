@@ -25,6 +25,7 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: wrapper.ParseLogLevel(os.Getenv("LOG_LEVEL")),
 	}))
+	wrapper.SetChildSubreaper(logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()

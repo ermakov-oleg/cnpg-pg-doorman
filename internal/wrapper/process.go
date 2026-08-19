@@ -2,6 +2,7 @@ package wrapper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -35,6 +36,9 @@ type Process struct {
 	binary     string
 	waitMargin time.Duration
 	cmd        *exec.Cmd
+	// adoptedPid is the pid of a post-upgrade successor that re-executed itself
+	// and reparented to the wrapper: it is supervised by pid instead of by cmd.
+	adoptedPid int
 	mu         sync.Mutex
 	logger     *slog.Logger
 }
@@ -77,6 +81,7 @@ func (p *Process) Start(ctx context.Context) error {
 	}
 	cmd.WaitDelay = p.waitDelay()
 	p.cmd = cmd
+	p.adoptedPid = 0
 
 	if err := p.cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start pg_doorman: %w", err)
@@ -86,15 +91,99 @@ func (p *Process) Start(ctx context.Context) error {
 	return nil
 }
 
+// Pid returns the currently supervised pid (0 when not running).
+func (p *Process) Pid() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.pidLocked()
+}
+
+func (p *Process) pidLocked() int {
+	if p.adoptedPid != 0 {
+		return p.adoptedPid
+	}
+	if p.cmd != nil && p.cmd.Process != nil {
+		return p.cmd.Process.Pid
+	}
+	return 0
+}
+
+// signalLocked sends sig to the supervised process, either the direct child or
+// the adopted post-upgrade one. Callers hold p.mu.
+func (p *Process) signalLocked(sig syscall.Signal) error {
+	pid := p.pidLocked()
+	if pid == 0 {
+		return fmt.Errorf("process not running")
+	}
+	return syscall.Kill(pid, sig)
+}
+
 func (p *Process) Wait() error {
 	p.mu.Lock()
 	cmd := p.cmd
+	adopted := p.adoptedPid
 	p.mu.Unlock()
 
+	if adopted != 0 {
+		return waitPid(adopted)
+	}
 	if cmd == nil || cmd.Process == nil {
 		return fmt.Errorf("process not started")
 	}
 	return cmd.Wait()
+}
+
+// waitPid blocks until the adopted process exits. Only the adopted successor is
+// waited this way: a global wait4(-1) reaper would steal exit statuses from the
+// exec.Cmd users, such as the config validator.
+func waitPid(pid int) error {
+	var ws syscall.WaitStatus
+	for {
+		_, err := syscall.Wait4(pid, &ws, 0, nil)
+		if errors.Is(err, syscall.EINTR) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("wait4 pid %d: %w", pid, err)
+		}
+		break
+	}
+	if ws.ExitStatus() != 0 || ws.Signaled() {
+		return fmt.Errorf("adopted pg_doorman exited: status %d signaled %v", ws.ExitStatus(), ws.Signaled())
+	}
+	return nil
+}
+
+// terminateIfAdopted mirrors the cmd.Cancel+WaitDelay sequence for the adopted
+// process, which has no exec.Cmd to propagate context cancellation: SIGTERM,
+// then SIGKILL after waitDelay.
+func (p *Process) terminateIfAdopted() {
+	p.mu.Lock()
+	pid := p.adoptedPid
+	p.mu.Unlock()
+	if pid == 0 {
+		return
+	}
+
+	p.logger.Info("sending SIGTERM to adopted pg_doorman", "pid", pid)
+	p.killAdopted(pid, syscall.SIGTERM)
+	time.AfterFunc(p.waitDelay(), func() {
+		p.killAdopted(pid, syscall.SIGKILL)
+	})
+}
+
+// killAdopted signals pid unless it is no longer the supervised one; a process
+// that already exited (ESRCH) is not an error.
+func (p *Process) killAdopted(pid int, sig syscall.Signal) {
+	p.mu.Lock()
+	current := p.adoptedPid
+	p.mu.Unlock()
+	if current != pid {
+		return
+	}
+	if err := syscall.Kill(pid, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
+		p.logger.Warn("failed to signal adopted pg_doorman", "pid", pid, "signal", sig, "error", err)
+	}
 }
 
 // Restart gracefully stops pg_doorman (SIGTERM honors shutdown_timeout);
@@ -104,24 +193,26 @@ func (p *Process) Restart() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.cmd == nil || p.cmd.Process == nil {
+	pid := p.pidLocked()
+	if pid == 0 {
 		return fmt.Errorf("process not running")
 	}
 
-	p.logger.Info("sending SIGTERM to pg_doorman to apply non-reloadable config", "pid", p.cmd.Process.Pid)
-	return p.cmd.Process.Signal(syscall.SIGTERM)
+	p.logger.Info("sending SIGTERM to pg_doorman to apply non-reloadable config", "pid", pid)
+	return p.signalLocked(syscall.SIGTERM)
 }
 
 func (p *Process) Reload() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.cmd == nil || p.cmd.Process == nil {
+	pid := p.pidLocked()
+	if pid == 0 {
 		return fmt.Errorf("process not running")
 	}
 
-	p.logger.Info("sending SIGHUP to pg_doorman", "pid", p.cmd.Process.Pid)
-	return p.cmd.Process.Signal(syscall.SIGHUP)
+	p.logger.Info("sending SIGHUP to pg_doorman", "pid", pid)
+	return p.signalLocked(syscall.SIGHUP)
 }
 
 // backoffAfterExit returns the delay before the next start attempt.
@@ -153,7 +244,12 @@ func (p *Process) RunWithRestart(ctx context.Context) error {
 			continue
 		}
 
+		// exec.CommandContext handles cancellation for a direct child; the
+		// adopted process needs the SIGTERM/SIGKILL sequence arranged here.
+		stopTerm := context.AfterFunc(ctx, p.terminateIfAdopted)
 		err := p.Wait()
+		stopTerm()
+
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
