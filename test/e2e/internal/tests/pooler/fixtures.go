@@ -84,6 +84,13 @@ func newCluster(namespace, name, configName string) *cnpgv1.Cluster {
 	}
 }
 
+// newClusterWithInstances creates a Cluster with the given number of instances.
+func newClusterWithInstances(namespace, name, configName string, instances int) *cnpgv1.Cluster {
+	c := newCluster(namespace, name, configName)
+	c.Spec.Instances = instances
+	return c
+}
+
 // newClusterWithMissingConfig creates a Cluster referencing a non-existent PgDoorman CR.
 func newClusterWithMissingConfig(namespace, name string) *cnpgv1.Cluster {
 	return newCluster(namespace, name, "non-existent-config")
