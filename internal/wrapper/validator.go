@@ -29,7 +29,7 @@ func NewBinaryConfigTester(binary string) ConfigTester {
 	return func(ctx context.Context, path string) error {
 		ctx, cancel := context.WithTimeout(ctx, binaryTestTimeout)
 		defer cancel()
-		out, err := exec.CommandContext(ctx, binary, path, "--test-config").CombinedOutput()
+		out, err := exec.CommandContext(ctx, binary, path, "--test-config").CombinedOutput() //nolint:gosec // fixed binary, path is our candidate file
 		if err != nil {
 			return fmt.Errorf("pg_doorman --test-config failed: %w: %s", err, out)
 		}
@@ -214,7 +214,7 @@ func validateAuthQuery(name string, aq *AuthQueryConfig) error {
 // AtomicWrite writes data via temp file + fsync + rename.
 func AtomicWrite(path string, data []byte) error {
 	tmp := path + ".tmp"
-	f, err := os.Create(tmp)
+	f, err := os.Create(tmp) //nolint:gosec // path is derived from our own constant
 	if err != nil {
 		return err
 	}

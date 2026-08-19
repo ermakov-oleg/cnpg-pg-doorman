@@ -1,9 +1,24 @@
 version: "2"
 
 linters:
+  enable:
+    - gosec
+    - errorlint
+    - bodyclose
+    - copyloopvar
+    - nilerr
+    - unparam
   settings:
     staticcheck:
       checks:
         - "all"
         - "-ST1000" # don't require package comments
         - "-ST1001" # allow dot imports (ginkgo/gomega in e2e tests)
+  exclusions:
+    rules:
+      # Test fixtures legitimately use fixed credentials, permissive file
+      # modes and math/rand.
+      - path: '(.+)_test\.go'
+        linters: [gosec]
+      - path: '^test/'
+        linters: [gosec]

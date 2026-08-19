@@ -65,7 +65,7 @@ func (p *Process) Start(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	cmd := exec.CommandContext(ctx, p.binary, p.configPath)
+	cmd := exec.CommandContext(ctx, p.binary, p.configPath) //nolint:gosec // fixed binary path, config path is our constant
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	// The default Cancel sends SIGKILL — pg_doorman gets no chance to close client connections.

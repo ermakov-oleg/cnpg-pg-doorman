@@ -33,7 +33,7 @@ func BuildDoormanService(cluster *cnpgv1.Cluster, poolerPort int) *corev1.Servic
 				{
 					Name:       "pooler",
 					Port:       5432,
-					TargetPort: intstr.FromInt32(int32(poolerPort)),
+					TargetPort: intstr.FromInt32(int32(poolerPort)), //nolint:gosec // validated to 1..65535
 					Protocol:   corev1.ProtocolTCP,
 				},
 			},

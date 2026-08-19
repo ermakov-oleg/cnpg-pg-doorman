@@ -109,7 +109,7 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluste
 		Ports: []corev1.ContainerPort{
 			{
 				Name:          "pooler",
-				ContainerPort: int32(cfg.PoolerPort),
+				ContainerPort: int32(cfg.PoolerPort), //nolint:gosec // validated to 1..65535
 				Protocol:      corev1.ProtocolTCP,
 			},
 			{
@@ -117,7 +117,7 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluste
 				// that name (9187), and the CNPG PodMonitor (port: metrics)
 				// would scrape both, mixing series and breaking TLS scrapes.
 				Name:          "pgd-metrics",
-				ContainerPort: int32(cfg.MetricsPort),
+				ContainerPort: int32(cfg.MetricsPort), //nolint:gosec // validated to 1..65535
 				Protocol:      corev1.ProtocolTCP,
 			},
 		},
