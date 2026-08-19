@@ -88,7 +88,7 @@ func TestGetRefetchesAfterTTLExpiry(t *testing.T) {
 
 	// Change the secret behind the cache's back (bypassing Update invalidation).
 	cached.Data["password"] = []byte("new")
-	if err := counting.Client.Update(context.Background(), cached); err != nil {
+	if err := counting.Update(context.Background(), cached); err != nil {
 		t.Fatal(err)
 	}
 
