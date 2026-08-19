@@ -210,6 +210,13 @@ For in-pod communication (e.g. from application sidecars), connect to `localhost
 
 ## Monitoring
 
+The wrapper exposes its own metrics on the health port `8081` (`/metrics`):
+`pg_doorman_wrapper_reloads_total{result}`, `pg_doorman_wrapper_process_restarts_total`
+(in-process restarts are invisible to Kubernetes: `restartCount` stays 0) and
+`pg_doorman_wrapper_config_stale`. Rendering state is reported on the
+`PgDoorman` resource itself: the `Rendered` condition, `status.observedGeneration`
+and Events (`kubectl describe pgd <name>`).
+
 pg_doorman exposes Prometheus metrics on the `metricsPort` (default `9127`),
 declared as the named container port `pgd-metrics` on the sidecar. The
 PodMonitor CNPG creates for the cluster scrapes only the `metrics` port of the

@@ -13,6 +13,7 @@ import (
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -106,12 +107,15 @@ func (r *RenderedConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	if err := cfg.Validate(); err != nil {
 		r.eventf(&pgDoorman, "InvalidPluginConfig", "plugin parameters invalid: %v", err)
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, r.setRendered(ctx, &pgDoorman, false, "InvalidPluginConfig", err.Error())
 	}
 
 	if err := r.validateSecretOwnership(ctx, &pgDoorman, cluster.Name); err != nil {
 		r.eventf(&pgDoorman, "SecretNotAllowed", "%v", err)
 		logger.Error(err, "refusing to render config", "cluster", cluster.Name)
+		if statusErr := r.setRendered(ctx, &pgDoorman, false, "SecretNotAllowed", err.Error()); statusErr != nil {
+			return ctrl.Result{}, statusErr
+		}
 		return ctrl.Result{RequeueAfter: requeueAfter}, nil
 	}
 
@@ -119,13 +123,50 @@ func (r *RenderedConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err != nil {
 		r.eventf(&pgDoorman, "RenderFailed", "%v", err)
 		logger.Error(err, "config render failed", "cluster", cluster.Name)
+		if statusErr := r.setRendered(ctx, &pgDoorman, false, "RenderFailed", err.Error()); statusErr != nil {
+			return ctrl.Result{}, statusErr
+		}
 		return ctrl.Result{RequeueAfter: requeueAfter}, nil
 	}
 
 	if err := r.upsertSecret(ctx, &cluster, data, generatedAdmin); err != nil {
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{}, nil
+	return ctrl.Result{}, r.setRendered(ctx, &pgDoorman, true, "Rendered",
+		fmt.Sprintf("generation %d rendered into secret %s", pgDoorman.Generation, RenderedSecretName(cluster.Name)))
+}
+
+// setRendered updates the Rendered condition and observedGeneration; a
+// False->True transition additionally emits a Normal recovery event.
+func (r *RenderedConfigReconciler) setRendered(
+	ctx context.Context,
+	pgDoorman *v1alpha1.PgDoorman,
+	ok bool,
+	reason, message string,
+) error {
+	status := metav1.ConditionFalse
+	if ok {
+		status = metav1.ConditionTrue
+	}
+
+	prev := meta.FindStatusCondition(pgDoorman.Status.Conditions, "Rendered")
+	changed := meta.SetStatusCondition(&pgDoorman.Status.Conditions, metav1.Condition{
+		Type:               "Rendered",
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: pgDoorman.Generation,
+	})
+	if ok {
+		pgDoorman.Status.ObservedGeneration = pgDoorman.Generation
+	}
+	if !changed && pgDoorman.Status.ObservedGeneration == pgDoorman.Generation {
+		return nil
+	}
+	if ok && prev != nil && prev.Status == metav1.ConditionFalse && r.Recorder != nil {
+		r.Recorder.Eventf(pgDoorman, corev1.EventTypeNormal, "Rendered", "%s", message)
+	}
+	return r.Status().Update(ctx, pgDoorman)
 }
 
 // reconcileDeletion releases the finalizer only when no live Cluster

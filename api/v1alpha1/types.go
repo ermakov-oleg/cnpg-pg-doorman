@@ -161,14 +161,26 @@ type PrometheusSpec struct {
 }
 
 // PgDoormanStatus defines the observed state of PgDoorman.
-type PgDoormanStatus struct{}
+type PgDoormanStatus struct {
+	// ObservedGeneration is the last spec generation rendered into the
+	// per-cluster config Secret.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// Conditions describe the rendering state. The Rendered condition is True
+	// when the current generation was rendered into the config Secret.
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:storageversion
 // +kubebuilder:resource:shortName=pgd
 // +kubebuilder:printcolumn:name="Pools",type=string,JSONPath=`.spec.pools`,priority=1
-// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
+// +kubebuilder:printcolumn:name="Rendered",type=string,JSONPath=`.status.conditions[?(@.type=="Rendered")].status`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // PgDoorman is the Schema for the pgdoormans API.

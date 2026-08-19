@@ -85,7 +85,9 @@ func labeledSecret(name, forCluster string) *corev1.Secret {
 func newReconciler(t *testing.T, objs ...client.Object) *RenderedConfigReconciler {
 	t.Helper()
 	t.Setenv("SIDECAR_IMAGE", "wrapper:test")
-	cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(objs...).Build()
+	cl := fake.NewClientBuilder().WithScheme(newScheme(t)).
+		WithStatusSubresource(&v1alpha1.PgDoorman{}).
+		WithObjects(objs...).Build()
 	return &RenderedConfigReconciler{Client: cl}
 }
 
@@ -229,4 +231,50 @@ func TestFinalizerLifecycle(t *testing.T) {
 	if err == nil {
 		t.Error("CR must be deleted once the finalizer is released")
 	}
+}
+
+func TestRenderedConditionLifecycle(t *testing.T) {
+	unlabeled := labeledSecret("app-pass", "other-cluster")
+	r := newReconciler(t, cluster(), pgDoorman("app-pass"), unlabeled)
+
+	// Foreign secret: Rendered=False with a reason.
+	reconcile(t, r)
+	var cr v1alpha1.PgDoorman
+	if err := r.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: crName}, &cr); err != nil {
+		t.Fatal(err)
+	}
+	cond := findCondition(cr.Status.Conditions, "Rendered")
+	if cond == nil || cond.Status != metav1.ConditionFalse || cond.Reason != "SecretNotAllowed" {
+		t.Fatalf("Rendered condition = %+v, want False/SecretNotAllowed", cond)
+	}
+
+	// Label the secret: Rendered turns True, observedGeneration catches up.
+	var secret corev1.Secret
+	if err := r.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: "app-pass"}, &secret); err != nil {
+		t.Fatal(err)
+	}
+	secret.Labels[ClusterLabel] = clusterName
+	if err := r.Update(context.Background(), &secret); err != nil {
+		t.Fatal(err)
+	}
+	reconcile(t, r)
+	if err := r.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: crName}, &cr); err != nil {
+		t.Fatal(err)
+	}
+	cond = findCondition(cr.Status.Conditions, "Rendered")
+	if cond == nil || cond.Status != metav1.ConditionTrue {
+		t.Fatalf("Rendered condition = %+v, want True", cond)
+	}
+	if cr.Status.ObservedGeneration != cr.Generation {
+		t.Errorf("observedGeneration = %d, want %d", cr.Status.ObservedGeneration, cr.Generation)
+	}
+}
+
+func findCondition(conditions []metav1.Condition, condType string) *metav1.Condition {
+	for i := range conditions {
+		if conditions[i].Type == condType {
+			return &conditions[i]
+		}
+	}
+	return nil
 }

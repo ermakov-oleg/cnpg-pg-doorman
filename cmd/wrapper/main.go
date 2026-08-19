@@ -76,6 +76,7 @@ func serveHealth(port int, logger *slog.Logger) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprintln(w, "ok")
 	})
+	mux.Handle("/metrics", wrapper.MetricsHandler())
 	srv := &http.Server{
 		Addr:              ":" + strconv.Itoa(port),
 		Handler:           mux,
