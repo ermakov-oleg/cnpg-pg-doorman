@@ -64,12 +64,16 @@ func reconcilePod(
 
 func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluster *cnpgv1.Cluster) {
 
-	// Add emptyDir scratch volume for /tmp
+	// Add tmpfs scratch volume for /tmp: the working config copy carries
+	// plaintext passwords and must never be written to the node disk
+	// (a disk-backed emptyDir lands under /var/lib/kubelet and in snapshots).
 	if !hasVolume(spec.Volumes, scratchVolumeName) {
 		spec.Volumes = append(spec.Volumes, corev1.Volume{
 			Name: scratchVolumeName,
 			VolumeSource: corev1.VolumeSource{
-				EmptyDir: &corev1.EmptyDirVolumeSource{},
+				EmptyDir: &corev1.EmptyDirVolumeSource{
+					Medium: corev1.StorageMediumMemory,
+				},
 			},
 		})
 	}

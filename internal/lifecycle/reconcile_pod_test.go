@@ -248,3 +248,20 @@ func TestInjectSidecarLogLevelEnv(t *testing.T) {
 	}
 	t.Error("LOG_LEVEL env var missing on the sidecar")
 }
+
+func TestInjectSidecarScratchIsTmpfs(t *testing.T) {
+	// The working config copy carries plaintext passwords: the scratch volume
+	// must be memory-backed, never the node disk.
+	spec := &corev1.PodSpec{}
+	injectSidecar(spec, testPluginConfig(), testCluster())
+
+	for _, v := range spec.Volumes {
+		if v.Name == scratchVolumeName {
+			if v.EmptyDir == nil || v.EmptyDir.Medium != corev1.StorageMediumMemory {
+				t.Errorf("scratch volume must be tmpfs (Medium=Memory), got %+v", v.VolumeSource)
+			}
+			return
+		}
+	}
+	t.Fatal("scratch volume not found")
+}
