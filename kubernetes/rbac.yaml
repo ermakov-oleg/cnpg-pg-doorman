@@ -36,3 +36,33 @@ subjects:
   - kind: ServiceAccount
     name: pg-doorman
     namespace: cnpg-system
+---
+# Leader election (controller runnables run on one replica only)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app: pg-doorman
+  name: pg-doorman-leader-election
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app: pg-doorman
+  name: pg-doorman-leader-election
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pg-doorman-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: pg-doorman
+    namespace: cnpg-system

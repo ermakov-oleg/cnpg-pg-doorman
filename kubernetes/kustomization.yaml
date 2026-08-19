@@ -8,6 +8,7 @@ resources:
   - certificate-issuer.yaml
   - client-certificate.yaml
   - deployment.yaml
+  - pdb.yaml
   - server-certificate.yaml
   - service.yaml
 images:
