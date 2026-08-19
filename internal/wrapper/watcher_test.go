@@ -17,12 +17,18 @@ import (
 )
 
 type fakeReloader struct {
-	calls int
-	err   error
+	calls    int
+	restarts int
+	err      error
 }
 
 func (f *fakeReloader) Reload() error {
 	f.calls++
+	return f.err
+}
+
+func (f *fakeReloader) Restart() error {
+	f.restarts++
 	return f.err
 }
 
@@ -151,5 +157,78 @@ func TestNewBinaryConfigTester(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "bad config") {
 		t.Errorf("error must include binary output, got %q", err.Error())
+	}
+}
+
+func TestCheckNonReloadableChangeRestartsProcess(t *testing.T) {
+	// worker_threads sizes the tokio runtime at startup: SIGHUP does not apply
+	// it. The wrapper must gracefully restart the process instead of logging a
+	// false "config reloaded successfully".
+	reloader := &fakeReloader{}
+	tester := func(_ context.Context, _ string) error { return nil }
+	w, runtimePath := newTestWatcher(t, tester, reloader)
+
+	oldCfg := "general:\n  worker_threads: 2\npools:\n  db:\n    server_host: h\n    users:\n      - username: u\n        password: p\n"
+	if err := os.WriteFile(runtimePath, []byte(oldCfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w.generate = func(_ context.Context, _ *v1alpha1.PgDoormanSpec) ([]byte, error) {
+		return []byte("general:\n  worker_threads: 8\npools:\n  db:\n    server_host: h\n    users:\n      - username: u\n        password: p\n"), nil
+	}
+
+	w.check(context.Background())
+
+	if reloader.restarts != 1 {
+		t.Errorf("Restart called %d times, want 1", reloader.restarts)
+	}
+	if reloader.calls != 0 {
+		t.Errorf("Reload called %d times, want 0 (SIGHUP cannot apply worker_threads)", reloader.calls)
+	}
+}
+
+func TestCheckReloadableChangeDoesNotRestart(t *testing.T) {
+	reloader := &fakeReloader{}
+	tester := func(_ context.Context, _ string) error { return nil }
+	w, runtimePath := newTestWatcher(t, tester, reloader)
+
+	oldCfg := "general:\n  worker_threads: 2\npools:\n  db:\n    server_host: h\n    pool_mode: session\n    users:\n      - username: u\n        password: p\n"
+	if err := os.WriteFile(runtimePath, []byte(oldCfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w.generate = func(_ context.Context, _ *v1alpha1.PgDoormanSpec) ([]byte, error) {
+		return []byte("general:\n  worker_threads: 2\npools:\n  db:\n    server_host: h\n    pool_mode: transaction\n    users:\n      - username: u\n        password: p\n"), nil
+	}
+
+	w.check(context.Background())
+
+	if reloader.calls != 1 {
+		t.Errorf("Reload called %d times, want 1", reloader.calls)
+	}
+	if reloader.restarts != 0 {
+		t.Errorf("Restart called %d times, want 0", reloader.restarts)
+	}
+}
+
+func TestNeedsProcessRestart(t *testing.T) {
+	mk := func(threads, maxConn, port int) *DoormanConfig {
+		return &DoormanConfig{General: GeneralConfig{
+			WorkerThreads:  &threads,
+			MaxConnections: &maxConn,
+			Host:           "0.0.0.0",
+			Port:           port,
+		}}
+	}
+	if NeedsProcessRestart(mk(4, 100, 6432), mk(4, 100, 6432)) {
+		t.Error("identical non-reloadable fields must not require restart")
+	}
+	for name, changed := range map[string]*DoormanConfig{
+		"worker_threads":  mk(8, 100, 6432),
+		"max_connections": mk(4, 200, 6432),
+		"port":            mk(4, 100, 7432),
+	} {
+		base := mk(4, 100, 6432)
+		if !NeedsProcessRestart(base, changed) {
+			t.Errorf("%s change must require restart", name)
+		}
 	}
 }

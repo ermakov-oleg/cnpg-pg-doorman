@@ -91,6 +91,21 @@ func (p *Process) Wait() error {
 	return cmd.Wait()
 }
 
+// Restart gracefully stops pg_doorman (SIGTERM honors shutdown_timeout);
+// RunWithRestart then starts a new process, which picks up the new config.
+// Used for non-reloadable config fields that SIGHUP silently ignores.
+func (p *Process) Restart() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.cmd == nil || p.cmd.Process == nil {
+		return fmt.Errorf("process not running")
+	}
+
+	p.logger.Info("sending SIGTERM to pg_doorman to apply non-reloadable config", "pid", p.cmd.Process.Pid)
+	return p.cmd.Process.Signal(syscall.SIGTERM)
+}
+
 func (p *Process) Reload() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
