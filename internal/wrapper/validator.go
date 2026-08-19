@@ -47,6 +47,8 @@ type DoormanConfig struct {
 type GeneralConfig struct {
 	Host            string `yaml:"host"`
 	Port            int    `yaml:"port"`
+	TLSCertificate  string `yaml:"tls_certificate,omitempty"`
+	TLSPrivateKey   string `yaml:"tls_private_key,omitempty"`
 	AdminUsername   string `yaml:"admin_username"`
 	AdminPassword   string `yaml:"admin_password"`
 	WorkerThreads   *int   `yaml:"worker_threads,omitempty"`

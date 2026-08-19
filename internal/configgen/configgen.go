@@ -10,9 +10,15 @@ import (
 // AdminPasswordKey is the passwords map key for the admin password resolved from SecretRef.
 const AdminPasswordKey = "_admin/password"
 
+// TLSFiles points to the certificate pair pg_doorman terminates client TLS with.
+type TLSFiles struct {
+	Certificate string
+	PrivateKey  string
+}
+
 // Generate creates pg_doorman YAML config from PgDoormanSpec.
 // The passwords map is keyed by "{poolName}/{type}/{username}" and contains resolved passwords.
-func Generate(spec *v1alpha1.PgDoormanSpec, poolerPort, metricsPort int, passwords map[string]string) ([]byte, error) {
+func Generate(spec *v1alpha1.PgDoormanSpec, poolerPort, metricsPort int, passwords map[string]string, tls *TLSFiles) ([]byte, error) {
 	applied := spec.DeepCopy()
 	v1alpha1.ApplyDefaults(applied)
 
@@ -35,6 +41,11 @@ func Generate(spec *v1alpha1.PgDoormanSpec, poolerPort, metricsPort int, passwor
 			ShutdownTimeout: applied.General.ShutdownTimeout,
 		},
 		Pools: make(map[string]wrapper.PoolConfig, len(applied.Pools)),
+	}
+
+	if tls != nil {
+		cfg.General.TLSCertificate = tls.Certificate
+		cfg.General.TLSPrivateKey = tls.PrivateKey
 	}
 
 	if applied.Prometheus != nil && *applied.Prometheus.Enabled {

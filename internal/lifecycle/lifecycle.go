@@ -59,7 +59,7 @@ func (impl Implementation) LifecycleHook(
 
 	switch kind {
 	case "Pod":
-		return reconcilePod(request, pluginConfig, cluster.Name, cluster.Namespace)
+		return reconcilePod(request, pluginConfig, cluster)
 	default:
 		return &lifecycle.OperatorLifecycleResponse{}, nil
 	}

@@ -97,8 +97,16 @@ func main() {
 
 	cl := extclient.NewExtendedClient(mgr.GetClient())
 
+	// Enable client-facing TLS when the lifecycle hook mounted the CNPG server
+	// certificate. Fail-closed: if the paths are set but broken, config
+	// validation rejects the file instead of silently serving cleartext.
+	var tlsFiles *configgen.TLSFiles
+	if certPath, keyPath := os.Getenv("TLS_CERT_PATH"), os.Getenv("TLS_KEY_PATH"); certPath != "" && keyPath != "" {
+		tlsFiles = &configgen.TLSFiles{Certificate: certPath, PrivateKey: keyPath}
+	}
+
 	// Build the config generator callback (resolves secrets + generates YAML)
-	generate := makeConfigGenerator(cl, namespace, poolerPort, metricsPort)
+	generate := makeConfigGenerator(cl, namespace, poolerPort, metricsPort, tlsFiles)
 
 	// Build the secret hash function for detecting secret rotation
 	secretHashFn := func(ctx context.Context, spec *v1alpha1.PgDoormanSpec, ns string) (string, error) {
@@ -142,13 +150,18 @@ func main() {
 	<-procDone
 }
 
-func makeConfigGenerator(cl client.Client, namespace string, poolerPort, metricsPort int) wrapper.ConfigGenerator {
+func makeConfigGenerator(
+	cl client.Client,
+	namespace string,
+	poolerPort, metricsPort int,
+	tlsFiles *configgen.TLSFiles,
+) wrapper.ConfigGenerator {
 	return func(ctx context.Context, spec *v1alpha1.PgDoormanSpec) ([]byte, error) {
 		passwords, err := credentials.ResolvePasswords(ctx, cl, namespace, spec)
 		if err != nil {
 			return nil, err
 		}
-		return configgen.Generate(spec, poolerPort, metricsPort, passwords)
+		return configgen.Generate(spec, poolerPort, metricsPort, passwords, tlsFiles)
 	}
 }
 

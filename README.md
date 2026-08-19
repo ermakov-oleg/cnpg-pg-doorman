@@ -19,6 +19,7 @@ CloudNativePG provides connection pooling through its `Pooler` CRD, which deploy
 - **Dynamic authentication** — reuses PostgreSQL password verification via `auth_query`
 - **Static user credentials** — passwords can be referenced from Kubernetes Secrets
 - **Transaction & session pool modes** — configurable per database pool
+- **Client TLS** — pg_doorman terminates TLS on the pooler port using the CNPG server certificate, so `sslmode=verify-full` clients work through the pooler
 - **Prometheus metrics** — built-in metrics endpoint for monitoring
 - **Automatic RBAC management** — the plugin creates necessary Roles and RoleBindings for the wrapper sidecar
 

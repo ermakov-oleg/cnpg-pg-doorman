@@ -21,7 +21,7 @@ func TestGenerate_MinimalAuthQuery(t *testing.T) {
 		},
 	}
 
-	data, err := Generate(spec, 6432, 9127, nil)
+	data, err := Generate(spec, 6432, 9127, nil, nil)
 	if err != nil {
 		t.Fatalf("Generate failed: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestGenerate_AuthQueryKeysMatchUpstream(t *testing.T) {
 		},
 	}
 
-	data, err := Generate(spec, 6432, 9127, nil)
+	data, err := Generate(spec, 6432, 9127, nil, nil)
 	if err != nil {
 		t.Fatalf("Generate failed: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestGenerate_WithPasswords(t *testing.T) {
 		PasswordKey("app", "user", "myuser"):             "userpass",
 	}
 
-	data, err := Generate(spec, 6432, 9127, passwords)
+	data, err := Generate(spec, 6432, 9127, passwords, nil)
 	if err != nil {
 		t.Fatalf("Generate failed: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestGenerate_CustomGeneral(t *testing.T) {
 		},
 	}
 
-	data, err := Generate(spec, 7000, 9200, nil)
+	data, err := Generate(spec, 7000, 9200, nil, nil)
 	if err != nil {
 		t.Fatalf("Generate failed: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestGenerate_AdminPasswordFromPasswords(t *testing.T) {
 		AdminPasswordKey: "super-secret-admin",
 	}
 
-	data, err := Generate(spec, 6432, 9127, passwords)
+	data, err := Generate(spec, 6432, 9127, passwords, nil)
 	if err != nil {
 		t.Fatalf("Generate failed: %v", err)
 	}
@@ -251,5 +251,55 @@ func TestPasswordKey(t *testing.T) {
 	got := PasswordKey("app", "auth_query", "doorman")
 	if got != "app/auth_query/doorman" {
 		t.Errorf("expected app/auth_query/doorman, got %q", got)
+	}
+}
+
+func minimalSpec() *v1alpha1.PgDoormanSpec {
+	return &v1alpha1.PgDoormanSpec{
+		Pools: map[string]v1alpha1.PoolSpec{
+			"app": {
+				AuthQuery: &v1alpha1.AuthQuerySpec{User: "doorman_auth"},
+			},
+		},
+	}
+}
+
+func TestGenerate_TLS(t *testing.T) {
+	spec := minimalSpec()
+	data, err := Generate(spec, 6432, 9127, nil, &TLSFiles{
+		Certificate: "/etc/pg-doorman-tls/tls.crt",
+		PrivateKey:  "/etc/pg-doorman-tls/tls.key",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var cfg map[string]any
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	general := cfg["general"].(map[string]any)
+	if got := general["tls_certificate"]; got != "/etc/pg-doorman-tls/tls.crt" {
+		t.Errorf("tls_certificate = %v", got)
+	}
+	if got := general["tls_private_key"]; got != "/etc/pg-doorman-tls/tls.key" {
+		t.Errorf("tls_private_key = %v", got)
+	}
+}
+
+func TestGenerate_NoTLSByDefault(t *testing.T) {
+	spec := minimalSpec()
+	data, err := Generate(spec, 6432, 9127, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var cfg map[string]any
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	general := cfg["general"].(map[string]any)
+	if _, ok := general["tls_certificate"]; ok {
+		t.Error("tls_certificate must be omitted when TLS is not configured")
 	}
 }
