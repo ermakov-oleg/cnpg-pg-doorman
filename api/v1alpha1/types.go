@@ -25,11 +25,13 @@ type PgDoormanSpec struct {
 type PoolSpec struct {
 	// PoolMode is the pooling mode (default: "transaction").
 	// +kubebuilder:validation:Enum=session;transaction
+	// +kubebuilder:default=transaction
 	// +optional
 	PoolMode string `json:"poolMode,omitempty"`
 
 	// DefaultPoolSize is the data pool size per auth_query user (default: 40).
 	// Maps to auth_query.pool_size.
+	// +kubebuilder:default=40
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	DefaultPoolSize *int `json:"defaultPoolSize,omitempty"`
@@ -50,6 +52,7 @@ type AuthQuerySpec struct {
 	User string `json:"user"`
 
 	// Query is the SQL query (default: "SELECT * FROM public.doorman_auth_query($1)").
+	// +kubebuilder:default="SELECT * FROM public.doorman_auth_query($1)"
 	// +optional
 	Query string `json:"query,omitempty"`
 
@@ -59,12 +62,14 @@ type AuthQuerySpec struct {
 	PasswordSecretRef *machineryapi.SecretKeySelector `json:"passwordSecretRef,omitempty"`
 
 	// Database is the database for auth queries (default: "postgres").
+	// +kubebuilder:default=postgres
 	// +optional
 	Database string `json:"database,omitempty"`
 
 	// PoolSize is the number of executor connections running auth queries (default: 2).
 	// Maps to auth_query.workers.
 	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default=2
 	// +optional
 	PoolSize *int `json:"poolSize,omitempty"`
 }
@@ -80,6 +85,7 @@ type UserSpec struct {
 
 	// PoolSize is the pool size for this user (default: 20).
 	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default=20
 	// +optional
 	PoolSize *int `json:"poolSize,omitempty"`
 }
@@ -88,39 +94,46 @@ type UserSpec struct {
 type GeneralSpec struct {
 	// MaxConnections is the maximum number of connections (default: 8192).
 	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default=8192
 	// +optional
 	MaxConnections *int `json:"maxConnections,omitempty"`
 
 	// WorkerThreads is the number of worker threads (default: 4).
 	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default=4
 	// +optional
 	WorkerThreads *int `json:"workerThreads,omitempty"`
 
 	// ConnectTimeout is the connection timeout (default: "3s").
 	// A plain number is milliseconds; suffixes ms/s/m/h/d are supported.
 	// +kubebuilder:validation:Pattern=`^[0-9]+(ms|s|m|h|d)?$`
+	// +kubebuilder:default="3s"
 	// +optional
 	ConnectTimeout string `json:"connectTimeout,omitempty"`
 
 	// IdleTimeout is the idle connection timeout (default: "5m").
 	// A plain number is milliseconds; suffixes ms/s/m/h/d are supported.
 	// +kubebuilder:validation:Pattern=`^[0-9]+(ms|s|m|h|d)?$`
+	// +kubebuilder:default="5m"
 	// +optional
 	IdleTimeout string `json:"idleTimeout,omitempty"`
 
 	// ServerLifetime is the server connection lifetime (default: "5m").
 	// A plain number is milliseconds; suffixes ms/s/m/h/d are supported.
 	// +kubebuilder:validation:Pattern=`^[0-9]+(ms|s|m|h|d)?$`
+	// +kubebuilder:default="5m"
 	// +optional
 	ServerLifetime string `json:"serverLifetime,omitempty"`
 
 	// ShutdownTimeout is the graceful shutdown timeout (default: "10s").
 	// A plain number is milliseconds; suffixes ms/s/m/h/d are supported.
 	// +kubebuilder:validation:Pattern=`^[0-9]+(ms|s|m|h|d)?$`
+	// +kubebuilder:default="10s"
 	// +optional
 	ShutdownTimeout string `json:"shutdownTimeout,omitempty"`
 
 	// AdminUsername is the admin user (default: "admin").
+	// +kubebuilder:default=admin
 	// +optional
 	AdminUsername string `json:"adminUsername,omitempty"`
 
@@ -140,6 +153,7 @@ type GeneralSpec struct {
 // PrometheusSpec defines Prometheus metrics configuration.
 type PrometheusSpec struct {
 	// Enabled controls whether Prometheus metrics are enabled (default: true).
+	// +kubebuilder:default=true
 	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
 }
@@ -150,6 +164,10 @@ type PgDoormanStatus struct{}
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:storageversion
+// +kubebuilder:resource:shortName=pgd
+// +kubebuilder:printcolumn:name="Pools",type=string,JSONPath=`.spec.pools`,priority=1
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // PgDoorman is the Schema for the pgdoormans API.
 type PgDoorman struct {
