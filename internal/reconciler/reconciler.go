@@ -8,9 +8,11 @@ import (
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/object"
 	"github.com/cloudnative-pg/cnpg-i/pkg/reconciler"
 	"github.com/cloudnative-pg/machinery/pkg/log"
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -61,7 +63,12 @@ func (r Implementation) Pre(
 
 	pluginConfig := config.NewFromCluster(&cluster)
 	if !pluginConfig.Enabled {
-		logger.Debug("pg-doorman plugin not enabled, skipping RBAC reconciliation")
+		// The plugin was disabled or removed from spec.plugins: without a
+		// cleanup the per-cluster Role keeps granting the instance
+		// ServiceAccount access to password secrets.
+		if err := r.cleanup(ctx, &cluster); err != nil {
+			return nil, err
+		}
 		return &reconciler.ReconcilerHooksResult{
 			Behavior: reconciler.ReconcilerHooksResult_BEHAVIOR_CONTINUE,
 		}, nil
@@ -95,6 +102,9 @@ func (r Implementation) Pre(
 	if err := r.ensureRoleBinding(ctx, &cluster); err != nil {
 		return nil, err
 	}
+	if err := r.ensureService(ctx, &cluster, pluginConfig.PoolerPort); err != nil {
+		return nil, err
+	}
 
 	logger.Debug("Pre hook reconciliation completed")
 	return &reconciler.ReconcilerHooksResult{
@@ -110,6 +120,69 @@ func (r Implementation) Post(
 	return &reconciler.ReconcilerHooksResult{
 		Behavior: reconciler.ReconcilerHooksResult_BEHAVIOR_CONTINUE,
 	}, nil
+}
+
+// cleanup removes the plugin-managed resources when the plugin is disabled.
+func (r Implementation) cleanup(ctx context.Context, cluster *cnpgv1.Cluster) error {
+	logger := log.FromContext(ctx).WithValues("cluster", cluster.Name, "namespace", cluster.Namespace)
+
+	objects := []client.Object{
+		&rbacv1.Role{ObjectMeta: metav1.ObjectMeta{
+			Namespace: cluster.Namespace, Name: specs.GetRBACName(cluster.Name),
+		}},
+		&rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{
+			Namespace: cluster.Namespace, Name: specs.GetRBACName(cluster.Name),
+		}},
+		&corev1.Service{ObjectMeta: metav1.ObjectMeta{
+			Namespace: cluster.Namespace, Name: specs.GetServiceName(cluster.Name),
+		}},
+	}
+	for _, obj := range objects {
+		if err := r.Client.Delete(ctx, obj); err != nil {
+			if apierrs.IsNotFound(err) {
+				continue
+			}
+			return err
+		}
+		logger.Info("Deleted plugin resource after plugin was disabled",
+			"kind", obj.GetObjectKind().GroupVersionKind().Kind, "name", obj.GetName())
+	}
+	return nil
+}
+
+func (r Implementation) ensureService(
+	ctx context.Context,
+	cluster *cnpgv1.Cluster,
+	poolerPort int,
+) error {
+	newService := specs.BuildDoormanService(cluster, poolerPort)
+
+	var svc corev1.Service
+	if err := r.Client.Get(ctx, client.ObjectKey{
+		Namespace: newService.Namespace,
+		Name:      newService.Name,
+	}, &svc); err != nil {
+		if !apierrs.IsNotFound(err) {
+			return err
+		}
+
+		log.FromContext(ctx).Info("Creating pooler service", "name", newService.Name, "namespace", newService.Namespace)
+		if err := ctrl.SetControllerReference(cluster, newService, r.Client.Scheme()); err != nil {
+			return err
+		}
+		return r.Client.Create(ctx, newService)
+	}
+
+	if equality.Semantic.DeepEqual(svc.Spec.Selector, newService.Spec.Selector) &&
+		equality.Semantic.DeepEqual(svc.Spec.Ports, newService.Spec.Ports) {
+		return nil
+	}
+
+	log.FromContext(ctx).Info("Patching pooler service", "name", newService.Name, "namespace", newService.Namespace)
+	patch := client.MergeFrom(svc.DeepCopy())
+	svc.Spec.Selector = newService.Spec.Selector
+	svc.Spec.Ports = newService.Spec.Ports
+	return r.Client.Patch(ctx, &svc, patch)
 }
 
 func (r Implementation) ensureRole(

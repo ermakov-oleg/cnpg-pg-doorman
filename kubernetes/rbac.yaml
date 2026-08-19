@@ -12,10 +12,14 @@ rules:
   # Manage Roles in cluster namespaces (direct, no cache)
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles"]
-    verbs: ["get", "create", "update", "patch"]
+    verbs: ["get", "create", "update", "patch", "delete"]
   # Manage RoleBindings in cluster namespaces (direct, no cache)
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["rolebindings"]
+    verbs: ["get", "create", "patch", "delete"]
+  # Manage the pooler read-write Service per cluster
+  - apiGroups: [""]
+    resources: ["services"]
     verbs: ["get", "create", "patch", "delete"]
   # Allow delegating Secret reads to per-cluster Roles without RBAC escalation failure
   - apiGroups: [""]
