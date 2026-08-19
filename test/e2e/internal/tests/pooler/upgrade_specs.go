@@ -202,7 +202,9 @@ var _ = Describe("in-place binary upgrade", Ordered, Serial, func() {
 	})
 
 	AfterAll(func(ctx SpecContext) {
-		setPluginImage(ctx, cl, pluginImageCurrent)
+		if cl != nil {
+			setPluginImage(ctx, cl, pluginImageCurrent)
+		}
 		if ns != nil {
 			_ = cl.Delete(ctx, ns)
 		}

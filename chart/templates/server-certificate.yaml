@@ -8,8 +8,13 @@ metadata:
 spec:
   secretName: {{ include "cnpg-pg-doorman.fullname" . }}-server-tls
   commonName: {{ include "cnpg-pg-doorman.fullname" . }}
+  # The service FQDNs are required by the binary delivery endpoint: wrappers
+  # live in the cluster namespaces and reach it as --binary-base-url, so the
+  # short in-namespace name CNPG uses for gRPC is not enough.
   dnsNames:
     - {{ include "cnpg-pg-doorman.fullname" . }}
+    - {{ include "cnpg-pg-doorman.fullname" . }}.{{ .Release.Namespace }}.svc
+    - {{ include "cnpg-pg-doorman.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
   duration: 8760h # 1y: rare rotations shrink the CNPG-side leaf-pinning window
   renewBefore: 360h
   isCA: false
