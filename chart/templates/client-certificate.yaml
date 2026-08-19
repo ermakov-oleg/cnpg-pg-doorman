@@ -1,0 +1,19 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  labels:
+    {{- include "cnpg-pg-doorman.labels" . | nindent 4 }}
+  name: {{ include "cnpg-pg-doorman.fullname" . }}-client
+  namespace: {{ .Release.Namespace }}
+spec:
+  secretName: {{ include "cnpg-pg-doorman.fullname" . }}-client-tls
+  commonName: {{ include "cnpg-pg-doorman.fullname" . }}-client
+  duration: 8760h # 1y: rare rotations shrink the CNPG-side leaf-pinning window
+  renewBefore: 360h
+  isCA: false
+  usages:
+    - client auth
+  issuerRef:
+    name: {{ include "cnpg-pg-doorman.fullname" . }}-ca-issuer
+    kind: Issuer
+    group: cert-manager.io

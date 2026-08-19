@@ -1,0 +1,9 @@
+cnpg-pg-doorman plugin installed in namespace {{ .Release.Namespace }}.
+
+The plugin must run in the same namespace as the CloudNativePG operator
+(usually cnpg-system) and requires cert-manager.
+
+Next steps: create a PgDoorman resource and reference the plugin from your
+CNPG Cluster. See the Quick Start:
+
+  https://github.com/ermakov-oleg/cnpg-pg-doorman#quick-start

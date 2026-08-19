@@ -1,0 +1,46 @@
+# Default values for the cnpg-pg-doorman chart.
+
+# Plugin gRPC server image.
+image:
+  repository: ghcr.io/ermakov-oleg/cnpg-pg-doorman
+  # Defaults to the chart appVersion (the release tag, e.g. v0.5.0).
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# pg_doorman sidecar wrapper image, injected into CNPG cluster pods.
+# Rendered into the SIDECAR_IMAGE key of the plugin Secret.
+sidecarImage:
+  repository: ghcr.io/ermakov-oleg/cnpg-pg-doorman-wrapper
+  # Defaults to the chart appVersion (the release tag, e.g. v0.5.0).
+  tag: ""
+
+# Overrides the "pg-doorman" name used for all managed resources.
+fullnameOverride: ""
+
+replicas: 2
+
+# Extra CLI args appended to the plugin container command line
+# (after the built-in serve/TLS/--leader-elect/--debug=false args).
+additionalArgs: []
+
+imagePullSecrets: []
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+# When empty, a preferred podAntiAffinity spreading replicas across nodes
+# is applied (same default as the kustomize manifests).
+affinity: {}
+
+pdb:
+  enabled: true
+  minAvailable: 1

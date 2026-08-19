@@ -1,0 +1,70 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    {{- include "cnpg-pg-doorman.labels" . | nindent 4 }}
+  name: {{ include "cnpg-pg-doorman.fullname" . }}
+rules:
+  # Read PgDoorman CRDs (cached by controller-runtime)
+  - apiGroups: ["pg-doorman.cnpg.io"]
+    resources: ["pgdoormen"]
+    verbs: ["get", "list", "watch"]
+  # Manage Roles in cluster namespaces (direct, no cache)
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles"]
+    verbs: ["get", "create", "update", "patch"]
+  # Manage RoleBindings in cluster namespaces (direct, no cache)
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["rolebindings"]
+    verbs: ["get", "create", "patch", "delete"]
+  # Allow delegating Secret reads to per-cluster Roles without RBAC escalation failure
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    {{- include "cnpg-pg-doorman.labels" . | nindent 4 }}
+  name: {{ include "cnpg-pg-doorman.fullname" . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "cnpg-pg-doorman.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cnpg-pg-doorman.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+---
+# Leader election (controller runnables run on one replica only)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    {{- include "cnpg-pg-doorman.labels" . | nindent 4 }}
+  name: {{ include "cnpg-pg-doorman.fullname" . }}-leader-election
+  namespace: {{ .Release.Namespace }}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    {{- include "cnpg-pg-doorman.labels" . | nindent 4 }}
+  name: {{ include "cnpg-pg-doorman.fullname" . }}-leader-election
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "cnpg-pg-doorman.fullname" . }}-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cnpg-pg-doorman.fullname" . }}
+    namespace: {{ .Release.Namespace }}

@@ -70,6 +70,19 @@ kubectl apply --server-side -f https://github.com/ermakov-oleg/cnpg-pg-doorman/r
 
 This installs the CRD, RBAC, TLS certificates, and the plugin Deployment into the `cnpg-system` namespace.
 
+### Install with Helm
+
+The same manifests are packaged as a Helm chart, published to `ghcr.io` as an OCI artifact by every release:
+
+```bash
+helm install cnpg-pg-doorman oci://ghcr.io/ermakov-oleg/charts/cnpg-pg-doorman \
+  --namespace cnpg-system --create-namespace
+```
+
+Image tags default to the chart `appVersion` (the release tag), so a released chart pulls the matching plugin and wrapper images. See `chart/values.yaml` for the configurable values (images, replicas, resources, PDB, scheduling).
+
+The plugin must be installed into the namespace where the CloudNativePG operator runs (usually `cnpg-system`).
+
 > **Note**: do not `kubectl apply -k` the raw `kubernetes/` directory — it is the development kustomization with local `:testing` image names and is guaranteed to ImagePullBackOff outside the e2e setup. Building your own images is covered in [Development](#development).
 
 ## Quick Start

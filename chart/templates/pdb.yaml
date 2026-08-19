@@ -1,0 +1,14 @@
+{{- if .Values.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    {{- include "cnpg-pg-doorman.labels" . | nindent 4 }}
+  name: {{ include "cnpg-pg-doorman.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "cnpg-pg-doorman.selectorLabels" . | nindent 6 }}
+{{- end }}

@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    {{- include "cnpg-pg-doorman.labels" . | nindent 4 }}
+  name: {{ include "cnpg-pg-doorman.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      {{- include "cnpg-pg-doorman.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        {{- include "cnpg-pg-doorman.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "cnpg-pg-doorman.fullname" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      {{- if .Values.affinity }}
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}
+      {{- else }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "cnpg-pg-doorman.selectorLabels" . | nindent 20 }}
+                topologyKey: kubernetes.io/hostname
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - image: {{ include "cnpg-pg-doorman.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          name: pg-doorman
+          args:
+            - serve
+            - --server-cert=/server/tls.crt
+            - --server-key=/server/tls.key
+            # ca.crt (not tls.crt): verify CNPG client certs by the shared CA,
+            # so a client cert rotation never races the projected-volume sync.
+            - --client-cert=/client/ca.crt
+            - --server-address=:9090
+            - --leader-elect
+            # cnpg-i-machinery defaults --debug to TRUE: development zap config
+            # (console encoding, debug level) in production otherwise.
+            - --debug=false
+            {{- range .Values.additionalArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          ports:
+            - containerPort: 9090
+              protocol: TCP
+            - containerPort: 8081
+              protocol: TCP
+          env:
+            - name: SIDECAR_IMAGE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cnpg-pg-doorman.fullname" . }}
+                  key: SIDECAR_IMAGE
+          readinessProbe:
+            tcpSocket:
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - mountPath: /server
+              name: server
+            - mountPath: /client
+              name: client
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsUser: 10001
+            runAsGroup: 10001
+      volumes:
+        - name: server
+          secret:
+            secretName: {{ include "cnpg-pg-doorman.fullname" . }}-server-tls
+        - name: client
+          secret:
+            secretName: {{ include "cnpg-pg-doorman.fullname" . }}-client-tls
