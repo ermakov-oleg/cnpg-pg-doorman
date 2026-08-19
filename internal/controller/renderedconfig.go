@@ -18,6 +18,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -45,6 +46,11 @@ const (
 	requeueAfter = 30 * time.Second
 )
 
+// Finalizer blocks deletion of a PgDoorman still referenced by a live
+// Cluster. Managed by the leader-elected controller: a single writer, so no
+// races between instances.
+const Finalizer = "pg-doorman.cnpg.io/in-use"
+
 // RenderedSecretName returns the per-cluster rendered config Secret name.
 func RenderedSecretName(clusterName string) string {
 	return clusterName + "-doorman-config"
@@ -68,15 +74,29 @@ func (r *RenderedConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	var cluster cnpgv1.Cluster
+	clusterExists := true
 	if err := r.Get(ctx, types.NamespacedName{
 		Namespace: pgDoorman.Namespace,
 		Name:      pgDoorman.Spec.ClusterRef.Name,
 	}, &cluster); err != nil {
-		if apierrs.IsNotFound(err) {
-			// The Cluster may not exist yet (GitOps ordering).
-			return ctrl.Result{RequeueAfter: requeueAfter}, nil
+		if !apierrs.IsNotFound(err) {
+			return ctrl.Result{}, err
 		}
+		clusterExists = false
+	}
+
+	inUse := clusterExists && config.NewFromCluster(&cluster).ConfigName == pgDoorman.Name
+
+	if !pgDoorman.DeletionTimestamp.IsZero() {
+		return r.reconcileDeletion(ctx, &pgDoorman, inUse)
+	}
+	if err := r.ensureFinalizer(ctx, &pgDoorman, inUse); err != nil {
 		return ctrl.Result{}, err
+	}
+
+	if !clusterExists {
+		// The Cluster may not exist yet (GitOps ordering).
+		return ctrl.Result{RequeueAfter: requeueAfter}, nil
 	}
 
 	cfg := config.NewFromCluster(&cluster)
@@ -106,6 +126,45 @@ func (r *RenderedConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
+}
+
+// reconcileDeletion releases the finalizer only when no live Cluster
+// references the CR anymore; otherwise the deletion stays blocked.
+func (r *RenderedConfigReconciler) reconcileDeletion(
+	ctx context.Context,
+	pgDoorman *v1alpha1.PgDoorman,
+	inUse bool,
+) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(pgDoorman, Finalizer) {
+		return ctrl.Result{}, nil
+	}
+	if inUse {
+		r.eventf(pgDoorman, "DeletionBlocked",
+			"PgDoorman is still referenced by cluster %q", pgDoorman.Spec.ClusterRef.Name)
+		return ctrl.Result{RequeueAfter: requeueAfter}, nil
+	}
+	patch := client.MergeFrom(pgDoorman.DeepCopy())
+	controllerutil.RemoveFinalizer(pgDoorman, Finalizer)
+	return ctrl.Result{}, r.Patch(ctx, pgDoorman, patch)
+}
+
+// ensureFinalizer keeps the in-use finalizer in sync with the reference.
+func (r *RenderedConfigReconciler) ensureFinalizer(
+	ctx context.Context,
+	pgDoorman *v1alpha1.PgDoorman,
+	inUse bool,
+) error {
+	has := controllerutil.ContainsFinalizer(pgDoorman, Finalizer)
+	if inUse == has {
+		return nil
+	}
+	patch := client.MergeFrom(pgDoorman.DeepCopy())
+	if inUse {
+		controllerutil.AddFinalizer(pgDoorman, Finalizer)
+	} else {
+		controllerutil.RemoveFinalizer(pgDoorman, Finalizer)
+	}
+	return r.Patch(ctx, pgDoorman, patch)
 }
 
 // validateSecretOwnership rejects references to secrets not labeled as

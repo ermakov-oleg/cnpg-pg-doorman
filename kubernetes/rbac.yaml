@@ -5,10 +5,10 @@ metadata:
     app: pg-doorman
   name: pg-doorman
 rules:
-  # Watch PgDoorman CRDs (rendering controller)
+  # Watch PgDoorman CRDs (rendering controller); update manages the in-use finalizer
   - apiGroups: ["pg-doorman.cnpg.io"]
     resources: ["pgdoormen"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "update", "patch"]
   # Watch Clusters: plugin parameters carry ports and the configName
   - apiGroups: ["postgresql.cnpg.io"]
     resources: ["clusters"]
