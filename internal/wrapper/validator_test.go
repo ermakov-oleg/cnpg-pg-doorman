@@ -227,3 +227,158 @@ func TestAtomicWrite(t *testing.T) {
 		t.Error("temp file should be cleaned up after atomic write")
 	}
 }
+
+func TestValidateConfigBytes_InvalidPoolMode(t *testing.T) {
+	data := []byte(`
+general:
+  host: "0.0.0.0"
+  port: 6432
+pools:
+  app:
+    server_host: "localhost"
+    pool_mode: "statement"
+    users:
+      - username: "app"
+        password: "secret"
+`)
+	_, err := ValidateConfigBytes(data)
+	if err == nil {
+		t.Fatal("expected error for invalid pool_mode")
+	}
+}
+
+func TestValidateConfigBytes_ZeroWorkerThreads(t *testing.T) {
+	data := []byte(`
+general:
+  host: "0.0.0.0"
+  port: 6432
+  worker_threads: 0
+pools:
+  app:
+    server_host: "localhost"
+    users:
+      - username: "app"
+        password: "secret"
+`)
+	_, err := ValidateConfigBytes(data)
+	if err == nil {
+		t.Fatal("expected error for zero worker_threads")
+	}
+}
+
+func TestValidateConfigBytes_ZeroMaxConnections(t *testing.T) {
+	data := []byte(`
+general:
+  host: "0.0.0.0"
+  port: 6432
+  max_connections: 0
+pools:
+  app:
+    server_host: "localhost"
+    users:
+      - username: "app"
+        password: "secret"
+`)
+	_, err := ValidateConfigBytes(data)
+	if err == nil {
+		t.Fatal("expected error for zero max_connections")
+	}
+}
+
+func TestValidateConfigBytes_InvalidDuration(t *testing.T) {
+	data := []byte(`
+general:
+  host: "0.0.0.0"
+  port: 6432
+  connect_timeout: "3 seconds"
+pools:
+  app:
+    server_host: "localhost"
+    users:
+      - username: "app"
+        password: "secret"
+`)
+	_, err := ValidateConfigBytes(data)
+	if err == nil {
+		t.Fatal("expected error for invalid connect_timeout")
+	}
+}
+
+func TestValidateConfigBytes_ValidDurations(t *testing.T) {
+	data := []byte(`
+general:
+  host: "0.0.0.0"
+  port: 6432
+  connect_timeout: "3000"
+  idle_timeout: "5m"
+  server_lifetime: "1H"
+  shutdown_timeout: "10s"
+pools:
+  app:
+    server_host: "localhost"
+    users:
+      - username: "app"
+        password: "secret"
+`)
+	_, err := ValidateConfigBytes(data)
+	if err != nil {
+		t.Fatalf("expected valid config, got error: %v", err)
+	}
+}
+
+func TestValidateConfigBytes_ZeroUserPoolSize(t *testing.T) {
+	data := []byte(`
+general:
+  host: "0.0.0.0"
+  port: 6432
+pools:
+  app:
+    server_host: "localhost"
+    users:
+      - username: "app"
+        password: "secret"
+        pool_size: 0
+`)
+	_, err := ValidateConfigBytes(data)
+	if err == nil {
+		t.Fatal("expected error for zero users[].pool_size")
+	}
+}
+
+func TestValidateConfigBytes_ZeroAuthQueryWorkers(t *testing.T) {
+	data := []byte(`
+general:
+  host: "0.0.0.0"
+  port: 6432
+pools:
+  app:
+    server_host: "localhost"
+    auth_query:
+      query: "SELECT usename, passwd FROM pg_shadow WHERE usename = $1"
+      user: "doorman_auth"
+      workers: 0
+`)
+	_, err := ValidateConfigBytes(data)
+	if err == nil {
+		t.Fatal("expected error for zero auth_query.workers")
+	}
+}
+
+func TestValidateConfigBytes_InvalidAuthQueryCacheTTL(t *testing.T) {
+	data := []byte(`
+general:
+  host: "0.0.0.0"
+  port: 6432
+pools:
+  app:
+    server_host: "localhost"
+    auth_query:
+      query: "SELECT usename, passwd FROM pg_shadow WHERE usename = $1"
+      user: "doorman_auth"
+      cache_ttl: "1w"
+`)
+	_, err := ValidateConfigBytes(data)
+	if err == nil {
+		t.Fatal("expected error for invalid auth_query.cache_ttl")
+	}
+}

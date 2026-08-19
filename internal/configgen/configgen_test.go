@@ -37,11 +37,11 @@ func TestGenerate_MinimalAuthQuery(t *testing.T) {
 	if cfg.General.Port != 6432 {
 		t.Errorf("expected port 6432, got %d", cfg.General.Port)
 	}
-	if cfg.General.WorkerThreads != 4 {
-		t.Errorf("expected 4 worker threads, got %d", cfg.General.WorkerThreads)
+	if *cfg.General.WorkerThreads != 4 {
+		t.Errorf("expected 4 worker threads, got %d", *cfg.General.WorkerThreads)
 	}
-	if cfg.General.MaxConnections != 8192 {
-		t.Errorf("expected 8192 max connections, got %d", cfg.General.MaxConnections)
+	if *cfg.General.MaxConnections != 8192 {
+		t.Errorf("expected 8192 max connections, got %d", *cfg.General.MaxConnections)
 	}
 
 	pool, ok := cfg.Pools["app"]
@@ -66,11 +66,11 @@ func TestGenerate_MinimalAuthQuery(t *testing.T) {
 	if pool.AuthQuery.Query != v1alpha1.DefaultAuthQueryQuery {
 		t.Errorf("expected default query, got %q", pool.AuthQuery.Query)
 	}
-	if pool.AuthQuery.PoolSize != 40 {
-		t.Errorf("expected pool_size 40, got %d", pool.AuthQuery.PoolSize)
+	if *pool.AuthQuery.PoolSize != 40 {
+		t.Errorf("expected pool_size 40, got %d", *pool.AuthQuery.PoolSize)
 	}
-	if pool.AuthQuery.Workers != 2 {
-		t.Errorf("expected workers 2, got %d", pool.AuthQuery.Workers)
+	if *pool.AuthQuery.Workers != 2 {
+		t.Errorf("expected workers 2, got %d", *pool.AuthQuery.Workers)
 	}
 
 	if cfg.Prometheus == nil {
@@ -162,8 +162,8 @@ func TestGenerate_WithPasswords(t *testing.T) {
 	if pool.Users[0].Password != "userpass" {
 		t.Errorf("expected user password userpass, got %q", pool.Users[0].Password)
 	}
-	if pool.Users[0].PoolSize != 10 {
-		t.Errorf("expected pool_size 10, got %d", pool.Users[0].PoolSize)
+	if *pool.Users[0].PoolSize != 10 {
+		t.Errorf("expected pool_size 10, got %d", *pool.Users[0].PoolSize)
 	}
 }
 
@@ -202,8 +202,8 @@ func TestGenerate_CustomGeneral(t *testing.T) {
 	if cfg.General.Port != 7000 {
 		t.Errorf("expected port 7000, got %d", cfg.General.Port)
 	}
-	if cfg.General.WorkerThreads != 8 {
-		t.Errorf("expected 8 worker threads, got %d", cfg.General.WorkerThreads)
+	if *cfg.General.WorkerThreads != 8 {
+		t.Errorf("expected 8 worker threads, got %d", *cfg.General.WorkerThreads)
 	}
 	if cfg.General.ConnectTimeout != "5s" {
 		t.Errorf("expected connect_timeout 5s, got %q", cfg.General.ConnectTimeout)

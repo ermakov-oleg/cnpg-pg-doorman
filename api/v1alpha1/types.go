@@ -5,10 +5,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-
 // PgDoormanSpec defines the desired state of PgDoorman.
 type PgDoormanSpec struct {
 	// Pools defines the connection pools.
+	// +kubebuilder:validation:MinProperties=1
 	Pools map[string]PoolSpec `json:"pools"`
 
 	// General settings for pg_doorman.
@@ -21,13 +21,16 @@ type PgDoormanSpec struct {
 }
 
 // PoolSpec defines configuration for a single connection pool.
+// +kubebuilder:validation:XValidation:rule="(has(self.users) && self.users.size() > 0) || has(self.authQuery)",message="pool must define users or authQuery"
 type PoolSpec struct {
 	// PoolMode is the pooling mode (default: "transaction").
+	// +kubebuilder:validation:Enum=session;transaction
 	// +optional
 	PoolMode string `json:"poolMode,omitempty"`
 
 	// DefaultPoolSize is the data pool size per auth_query user (default: 40).
 	// Maps to auth_query.pool_size.
+	// +kubebuilder:validation:Minimum=1
 	// +optional
 	DefaultPoolSize *int `json:"defaultPoolSize,omitempty"`
 
@@ -43,6 +46,7 @@ type PoolSpec struct {
 // AuthQuerySpec defines auth_query configuration.
 type AuthQuerySpec struct {
 	// User is the PostgreSQL user for auth queries.
+	// +kubebuilder:validation:MinLength=1
 	User string `json:"user"`
 
 	// Query is the SQL query (default: "SELECT * FROM public.doorman_auth_query($1)").
@@ -60,6 +64,7 @@ type AuthQuerySpec struct {
 
 	// PoolSize is the number of executor connections running auth queries (default: 2).
 	// Maps to auth_query.workers.
+	// +kubebuilder:validation:Minimum=1
 	// +optional
 	PoolSize *int `json:"poolSize,omitempty"`
 }
@@ -67,12 +72,14 @@ type AuthQuerySpec struct {
 // UserSpec defines a static user.
 type UserSpec struct {
 	// Username is the PostgreSQL username.
+	// +kubebuilder:validation:MinLength=1
 	Username string `json:"username"`
 
 	// PasswordSecretRef references a Secret containing the user password.
 	PasswordSecretRef machineryapi.SecretKeySelector `json:"passwordSecretRef"`
 
 	// PoolSize is the pool size for this user (default: 20).
+	// +kubebuilder:validation:Minimum=1
 	// +optional
 	PoolSize *int `json:"poolSize,omitempty"`
 }
@@ -80,26 +87,36 @@ type UserSpec struct {
 // GeneralSpec defines general pg_doorman settings.
 type GeneralSpec struct {
 	// MaxConnections is the maximum number of connections (default: 8192).
+	// +kubebuilder:validation:Minimum=1
 	// +optional
 	MaxConnections *int `json:"maxConnections,omitempty"`
 
 	// WorkerThreads is the number of worker threads (default: 4).
+	// +kubebuilder:validation:Minimum=1
 	// +optional
 	WorkerThreads *int `json:"workerThreads,omitempty"`
 
 	// ConnectTimeout is the connection timeout (default: "3s").
+	// A plain number is milliseconds; suffixes ms/s/m/h/d are supported.
+	// +kubebuilder:validation:Pattern=`^[0-9]+(ms|s|m|h|d)?$`
 	// +optional
 	ConnectTimeout string `json:"connectTimeout,omitempty"`
 
 	// IdleTimeout is the idle connection timeout (default: "5m").
+	// A plain number is milliseconds; suffixes ms/s/m/h/d are supported.
+	// +kubebuilder:validation:Pattern=`^[0-9]+(ms|s|m|h|d)?$`
 	// +optional
 	IdleTimeout string `json:"idleTimeout,omitempty"`
 
 	// ServerLifetime is the server connection lifetime (default: "5m").
+	// A plain number is milliseconds; suffixes ms/s/m/h/d are supported.
+	// +kubebuilder:validation:Pattern=`^[0-9]+(ms|s|m|h|d)?$`
 	// +optional
 	ServerLifetime string `json:"serverLifetime,omitempty"`
 
 	// ShutdownTimeout is the graceful shutdown timeout (default: "10s").
+	// A plain number is milliseconds; suffixes ms/s/m/h/d are supported.
+	// +kubebuilder:validation:Pattern=`^[0-9]+(ms|s|m|h|d)?$`
 	// +optional
 	ShutdownTimeout string `json:"shutdownTimeout,omitempty"`
 
