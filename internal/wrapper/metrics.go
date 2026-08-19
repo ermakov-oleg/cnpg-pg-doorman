@@ -25,6 +25,12 @@ var (
 		Help: "Unexpected pg_doorman exits followed by an in-process restart.",
 	})
 
+	// BinaryUpgradesTotal counts SIGUSR2 handover outcomes.
+	BinaryUpgradesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "pg_doorman_wrapper_binary_upgrades_total",
+		Help: "In-place pg_doorman binary upgrade handovers by result.",
+	}, []string{"result"})
+
 	// ConfigStale is 1 while the mounted rendered config differs from the
 	// applied one (e.g. it keeps failing validation).
 	ConfigStale = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -41,7 +47,7 @@ var (
 )
 
 func init() {
-	Registry.MustRegister(ReloadsTotal, ProcessRestartsTotal, ConfigStale, BinaryStale)
+	Registry.MustRegister(ReloadsTotal, ProcessRestartsTotal, BinaryUpgradesTotal, ConfigStale, BinaryStale)
 }
 
 // MetricsHandler serves the wrapper metrics.
