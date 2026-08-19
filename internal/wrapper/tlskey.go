@@ -11,7 +11,7 @@ import (
 // pg_doorman accepts only PKCS#8, while CNPG issues ECDSA keys in SEC1 PEM.
 // The destination is written 0600 and replaced atomically.
 func EnsurePKCS8Key(srcPath, dstPath string) error {
-	data, err := os.ReadFile(srcPath)
+	data, err := os.ReadFile(srcPath) //nolint:gosec // path comes from the pod spec env we set ourselves
 	if err != nil {
 		return fmt.Errorf("cannot read TLS key: %w", err)
 	}
