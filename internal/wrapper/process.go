@@ -157,6 +157,7 @@ func (p *Process) RunWithRestart(ctx context.Context) error {
 		}
 
 		uptime := time.Since(startedAt)
+		ProcessRestartsTotal.Inc()
 		backoff = backoffAfterExit(backoff, uptime)
 		p.logger.Error("pg_doorman exited unexpectedly, restarting", "error", err, "backoff", backoff, "uptime", uptime)
 		select {

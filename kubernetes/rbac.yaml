@@ -9,6 +9,9 @@ rules:
   - apiGroups: ["pg-doorman.cnpg.io"]
     resources: ["pgdoormen"]
     verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["pg-doorman.cnpg.io"]
+    resources: ["pgdoormen/status"]
+    verbs: ["update", "patch"]
   # Watch Clusters: plugin parameters carry ports and the configName
   - apiGroups: ["postgresql.cnpg.io"]
     resources: ["clusters"]

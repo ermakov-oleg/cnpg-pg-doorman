@@ -88,9 +88,12 @@ func (w *FileWatcher) check(ctx context.Context) {
 
 	w.logger.Info("rendered config changed")
 
+	ConfigStale.Set(1)
+
 	newCfg, err := ValidateConfigBytes(data)
 	if err != nil {
 		w.logger.Error("rendered config is invalid, keeping old config", "error", err)
+		ReloadsTotal.WithLabelValues("failure").Inc()
 		return
 	}
 
@@ -101,6 +104,7 @@ func (w *FileWatcher) check(ctx context.Context) {
 
 	if err := w.materialize(ctx, data); err != nil {
 		w.logger.Error("failed to apply rendered config, keeping old config", "error", err)
+		ReloadsTotal.WithLabelValues("failure").Inc()
 		return
 	}
 
@@ -108,14 +112,18 @@ func (w *FileWatcher) check(ctx context.Context) {
 		w.logger.Warn("non-reloadable config fields changed, restarting pg_doorman")
 		if err := w.process.Restart(); err != nil {
 			w.logger.Error("failed to restart pg_doorman", "error", err)
+			ReloadsTotal.WithLabelValues("failure").Inc()
 			return
 		}
 	} else if err := w.process.Reload(); err != nil {
 		w.logger.Error("failed to reload pg_doorman", "error", err)
+		ReloadsTotal.WithLabelValues("failure").Inc()
 		return
 	}
 
 	w.lastApplied = data
+	ConfigStale.Set(0)
+	ReloadsTotal.WithLabelValues("success").Inc()
 	w.logger.Info("config reloaded successfully", "restarted", needsRestart)
 }
 
