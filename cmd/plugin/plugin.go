@@ -18,6 +18,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/o-ermakov/cnpg-pg-doorman/api/v1alpha1"
@@ -43,6 +44,13 @@ type CNPGI struct {
 	ServerKeyPath  string
 	ClientCertPath string
 	ServerAddress  string
+}
+
+// NeedLeaderElection keeps the gRPC server active on every replica: CNPG
+// hooks must be served by all pods behind the Service. Leader election only
+// gates controller runnables.
+func (c *CNPGI) NeedLeaderElection() bool {
+	return false
 }
 
 // Start starts the gRPC server.
@@ -74,6 +82,12 @@ func NewCmd() *cobra.Command {
 	// Use CreateMainCmd to get the command with all standard flags (TLS, etc.)
 	cmd := http.CreateMainCmd(pluginIdentity.Implementation{})
 
+	cmd.Flags().Bool("leader-elect", false,
+		"Enable leader election: controller runnables run on one replica only, gRPC hooks are served by all replicas")
+	_ = viper.BindPFlag("leader-elect", cmd.Flags().Lookup("leader-elect"))
+	cmd.Flags().String("health-probe-bind-address", ":8081", "The address the probe endpoint binds to")
+	_ = viper.BindPFlag("health-probe-bind-address", cmd.Flags().Lookup("health-probe-bind-address"))
+
 	// Override RunE to create a manager first (needed for k8s client in ReconcilerHooks)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		ctx := cmd.Context()
@@ -83,6 +97,12 @@ func NewCmd() *cobra.Command {
 			Metrics: metricsserver.Options{
 				BindAddress: "0", // disabled
 			},
+			HealthProbeBindAddress: viper.GetString("health-probe-bind-address"),
+			LeaderElection:         viper.GetBool("leader-elect"),
+			LeaderElectionID:       "pg-doorman.cnpg.io",
+			// Step down voluntarily on shutdown so a standby replica can take
+			// over without waiting for the lease to expire.
+			LeaderElectionReleaseOnCancel: true,
 			Client: client.Options{
 				Cache: &client.CacheOptions{
 					// Disable cache for RBAC types — direct API reads avoid
@@ -96,6 +116,15 @@ func NewCmd() *cobra.Command {
 		})
 		if err != nil {
 			slog.Error("unable to start manager", "error", err)
+			return err
+		}
+
+		if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+			slog.Error("unable to set up health check", "error", err)
+			return err
+		}
+		if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+			slog.Error("unable to set up ready check", "error", err)
 			return err
 		}
 
