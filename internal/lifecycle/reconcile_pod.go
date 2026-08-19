@@ -20,10 +20,6 @@ const (
 	sidecarContainerName = "pg-doorman"
 	scratchVolumeName    = "pg-doorman-scratch"
 	scratchMountPath     = "/tmp"
-	// wrapperHealthPort serves the wrapper's own /healthz, independent of
-	// pg_doorman state: probing the pooler port kills the container while the
-	// wrapper legitimately waits for its config.
-	wrapperHealthPort = 8081
 	tlsVolumeName     = "pg-doorman-server-tls"
 	tlsMountPath      = "/etc/pg-doorman-tls"
 )
@@ -105,7 +101,7 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluste
 			{Name: "PG_DOORMAN_CONFIG_NAMESPACE", Value: clusterNamespace},
 			{Name: "POOLER_PORT", Value: strconv.Itoa(cfg.PoolerPort)},
 			{Name: "METRICS_PORT", Value: strconv.Itoa(cfg.MetricsPort)},
-			{Name: "HEALTH_PORT", Value: strconv.Itoa(wrapperHealthPort)},
+			{Name: "HEALTH_PORT", Value: strconv.Itoa(config.WrapperHealthPort)},
 			{Name: "TLS_CERT_PATH", Value: tlsMountPath + "/tls.crt"},
 			{Name: "TLS_KEY_PATH", Value: tlsMountPath + "/tls.key"},
 		},
@@ -129,7 +125,7 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluste
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Path: "/healthz",
-					Port: intstr.FromInt32(wrapperHealthPort),
+					Port: intstr.FromInt32(config.WrapperHealthPort),
 				},
 			},
 			InitialDelaySeconds: 10,

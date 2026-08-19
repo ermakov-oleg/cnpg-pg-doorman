@@ -17,6 +17,9 @@ const (
 	DefaultPoolerPort  = 6432
 	DefaultMetricsPort = 9127
 
+	// WrapperHealthPort serves the wrapper /healthz probed by the kubelet.
+	WrapperHealthPort = 8081
+
 	// Sidecar resource defaults. No CPU limit: pg_doorman runs 4 tokio worker
 	// threads by default and a hard CPU cap throttles all pooled traffic.
 	DefaultSidecarCPURequest    = "100m"
@@ -138,6 +141,19 @@ func (c *PluginConfiguration) Validate() error {
 	}
 	if c.PoolerPort == c.MetricsPort {
 		return fmt.Errorf("%s and %s must be different", ParamPoolerPort, ParamMetricsPort)
+	}
+	// Ports already bound in a CNPG instance pod: pg_doorman would fail to
+	// bind, the native sidecar would crash-loop and the pod never gets Ready.
+	reserved := map[int]string{
+		5432:              "PostgreSQL",
+		8000:              "CNPG instance manager status port",
+		9187:              "CNPG metrics exporter",
+		WrapperHealthPort: "wrapper health endpoint",
+	}
+	for param, port := range map[string]int{ParamPoolerPort: c.PoolerPort, ParamMetricsPort: c.MetricsPort} {
+		if owner, ok := reserved[port]; ok {
+			return fmt.Errorf("%s %d conflicts with %s", param, port, owner)
+		}
 	}
 	for _, name := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
 		req, hasReq := c.Resources.Requests[name]
