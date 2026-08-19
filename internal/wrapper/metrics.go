@@ -31,10 +31,17 @@ var (
 		Name: "pg_doorman_wrapper_config_stale",
 		Help: "1 when the mounted config differs from the applied one.",
 	})
+
+	// BinaryStale is 1 while the desired pg_doorman binary (from binary.json)
+	// is not the one installed at the runtime path.
+	BinaryStale = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "pg_doorman_wrapper_binary_stale",
+		Help: "1 when the desired pg_doorman binary is not yet installed.",
+	})
 )
 
 func init() {
-	Registry.MustRegister(ReloadsTotal, ProcessRestartsTotal, ConfigStale)
+	Registry.MustRegister(ReloadsTotal, ProcessRestartsTotal, ConfigStale, BinaryStale)
 }
 
 // MetricsHandler serves the wrapper metrics.

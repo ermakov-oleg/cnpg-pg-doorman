@@ -584,7 +584,7 @@ var _ = Describe("pg_doorman pooler", func() {
 				ContainerName: "pg-doorman",
 			},
 			nil,
-			[]string{"sh", "-c", `for p in /proc/[0-9]*/exe; do t=$(readlink "$p" 2>/dev/null); if [ "$t" = "/usr/bin/pg_doorman" ]; then kill "$(echo "$p" | cut -d/ -f3)" 2>/dev/null; fi; done`},
+			[]string{"sh", "-c", `for p in /proc/[0-9]*/exe; do t=$(readlink "$p" 2>/dev/null); if [ "$t" = "/tmp/bin/pg_doorman" ]; then kill "$(echo "$p" | cut -d/ -f3)" 2>/dev/null; fi; done`},
 		)
 		Expect(err).NotTo(HaveOccurred())
 

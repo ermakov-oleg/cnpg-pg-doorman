@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -38,6 +39,14 @@ func main() {
 
 	proc := wrapper.NewProcess(wrapper.RuntimeConfigPath, logger)
 	fw := wrapper.NewFileWatcher(sourcePath, wrapper.RuntimeConfigPath, rawKeyPath, wrapper.ConvertedTLSKeyPath, proc, logger)
+
+	syncer := wrapper.NewBinarySyncer(
+		envOr("BINARY_SPEC_SOURCE", wrapper.BinarySpecSourcePath),
+		wrapper.ImageBinaryPath, wrapper.RuntimeBinaryPath, runtime.GOARCH, logger)
+	if _, err := syncer.EnsureAtStartup(ctx); err != nil {
+		logger.Error("initial binary sync failed", "error", err)
+		os.Exit(1)
+	}
 
 	if err := fw.ApplyInitial(ctx); err != nil {
 		// The Secret volume is mounted before the container starts, so this
