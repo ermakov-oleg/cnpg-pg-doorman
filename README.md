@@ -62,13 +62,15 @@ CloudNativePG provides connection pooling through its `Pooler` CRD, which deploy
 
 ## Installation
 
-> **Note**: Container images are not yet published to a registry. You need to build and push images to your own registry first (see [Development](#development)). Then update the image references in `kubernetes/kustomization.yaml` before applying.
+Every [GitHub Release](https://github.com/ermakov-oleg/cnpg-pg-doorman/releases) ships a `manifest.yaml` with image references pinned to the released multi-arch images on `ghcr.io`:
 
 ```bash
-kubectl apply -k https://github.com/ermakov-oleg/cnpg-pg-doorman/kubernetes
+kubectl apply --server-side -f https://github.com/ermakov-oleg/cnpg-pg-doorman/releases/latest/download/manifest.yaml
 ```
 
 This installs the CRD, RBAC, TLS certificates, and the plugin Deployment into the `cnpg-system` namespace.
+
+> **Note**: do not `kubectl apply -k` the raw `kubernetes/` directory — it is the development kustomization with local `:testing` image names and is guaranteed to ImagePullBackOff outside the e2e setup. Building your own images is covered in [Development](#development).
 
 ## Quick Start
 
