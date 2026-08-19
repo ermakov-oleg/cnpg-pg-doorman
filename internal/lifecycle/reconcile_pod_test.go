@@ -213,3 +213,20 @@ func TestInjectSidecarRoleFile(t *testing.T) {
 		t.Errorf("ROLE_FILE = %q, want %q", roleEnv, podInfoMountPath+"/role")
 	}
 }
+
+func TestInjectSidecarPortNamesDoNotCollideWithCNPG(t *testing.T) {
+	// The CNPG postgres container declares a named port "metrics" (9187);
+	// duplicate named ports make the CNPG PodMonitor scrape both endpoints.
+	spec := &corev1.PodSpec{}
+	injectSidecar(spec, testPluginConfig(), testCluster())
+
+	sidecar := findSidecar(t, spec)
+	for _, p := range sidecar.Ports {
+		if p.Name == "metrics" {
+			t.Errorf("sidecar port name %q collides with the CNPG postgres container", p.Name)
+		}
+		if len(p.Name) > 15 {
+			t.Errorf("port name %q exceeds the 15-char limit", p.Name)
+		}
+	}
+}

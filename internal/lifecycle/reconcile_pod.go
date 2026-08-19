@@ -113,7 +113,10 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluste
 				Protocol:      corev1.ProtocolTCP,
 			},
 			{
-				Name:          "metrics",
+				// Not "metrics": the CNPG postgres container already declares
+				// that name (9187), and the CNPG PodMonitor (port: metrics)
+				// would scrape both, mixing series and breaking TLS scrapes.
+				Name:          "pgd-metrics",
 				ContainerPort: int32(cfg.MetricsPort),
 				Protocol:      corev1.ProtocolTCP,
 			},
