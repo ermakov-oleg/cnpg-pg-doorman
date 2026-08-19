@@ -605,7 +605,8 @@ var _ = Describe("pg_doorman pooler", func() {
 		configName := "cr-failover"
 		clusterName := "test-failover"
 
-		By("creating PgDoorman CR")
+		By("creating admin password Secret and PgDoorman CR")
+		ensureAdminPasswordSecret(ctx, cl, ns.Name)
 		Expect(cl.Create(ctx, newPgDoorman(ns.Name, configName))).To(Succeed())
 
 		By("creating 2-instance Cluster")
