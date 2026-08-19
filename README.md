@@ -73,7 +73,21 @@ This installs the CRD, RBAC, TLS certificates, and the plugin Deployment into th
 
 Both the `PgDoorman` CR and the CNPG `Cluster` must be in the same namespace.
 
-1. Create a `PgDoorman` resource with your pooler configuration:
+1. Create a Secret with the password of the `doorman_auth` role (used both by
+   PostgreSQL via `managed.roles` and by pg_doorman via `authQuery.passwordSecretRef`):
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-cluster-doorman-auth
+type: kubernetes.io/basic-auth
+stringData:
+  username: doorman_auth
+  password: "generate-a-strong-password-here"
+```
+
+2. Create a `PgDoorman` resource with your pooler configuration:
 
 ```yaml
 apiVersion: pg-doorman.cnpg.io/v1alpha1
@@ -85,9 +99,12 @@ spec:
     app:
       authQuery:
         user: doorman_auth
+        passwordSecretRef:
+          name: my-cluster-doorman-auth
+          key: password
 ```
 
-2. Create a CNPG `Cluster` that references the plugin:
+3. Create a CNPG `Cluster` that references the plugin:
 
 ```yaml
 apiVersion: postgresql.cnpg.io/v1
@@ -104,10 +121,20 @@ spec:
         metricsPort: "9127"
         configName: "my-cluster-doorman"
 
+  managed:
+    roles:
+      # CNPG keeps the doorman_auth password in sync with the Secret,
+      # including rotation.
+      - name: doorman_auth
+        login: true
+        inherit: false
+        passwordSecret:
+          name: my-cluster-doorman-auth
+
   postgresql:
     pg_hba:
-      # Allow doorman_auth to connect via localhost without password (for auth_query)
-      - host all doorman_auth 127.0.0.1/32 trust
+      # doorman_auth authenticates with its password (from the Secret above)
+      - host all doorman_auth 127.0.0.1/32 scram-sha-256
 
   bootstrap:
     initdb:
@@ -127,6 +154,14 @@ spec:
   storage:
     size: 10Gi
 ```
+
+> **Security note**: do NOT use a `trust` pg_hba rule for `doorman_auth`
+> (e.g. `host all doorman_auth 127.0.0.1/32 trust`). The pod network
+> namespace is shared: any compromised sidecar could connect to
+> `127.0.0.1:5432` as `doorman_auth` without a password and dump password
+> hashes of every role (including `postgres` and `streaming_replica`) through
+> the `SECURITY DEFINER` auth function. Always require `scram-sha-256` with a
+> real password as shown above.
 
 See the [examples/](examples/) directory for more configuration samples.
 
