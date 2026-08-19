@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
@@ -309,5 +310,94 @@ func TestSetDefaults_PreservesExisting(t *testing.T) {
 	}
 	if result["configName"] != "my-config" {
 		t.Errorf("expected preserved configName, got %q", result["configName"])
+	}
+}
+
+func clusterWithParams(params map[string]string) *cnpgv1.Cluster {
+	if params == nil {
+		params = map[string]string{}
+	}
+	if _, ok := params["configName"]; !ok {
+		params["configName"] = "my-config"
+	}
+	return &cnpgv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test"},
+		Spec: cnpgv1.ClusterSpec{
+			Plugins: []cnpgv1.PluginConfiguration{
+				{Name: "pg-doorman.cnpg.io", Parameters: params},
+			},
+		},
+	}
+}
+
+func TestNewFromCluster_DefaultResources(t *testing.T) {
+	cfg := NewFromCluster(clusterWithParams(nil))
+
+	if got := cfg.Resources.Requests.Cpu().String(); got != DefaultSidecarCPURequest {
+		t.Errorf("cpu request = %s, want %s", got, DefaultSidecarCPURequest)
+	}
+	if got := cfg.Resources.Requests.Memory().String(); got != DefaultSidecarMemoryRequest {
+		t.Errorf("memory request = %s, want %s", got, DefaultSidecarMemoryRequest)
+	}
+	if got := cfg.Resources.Limits.Memory().String(); got != DefaultSidecarMemoryLimit {
+		t.Errorf("memory limit = %s, want %s", got, DefaultSidecarMemoryLimit)
+	}
+	// No CPU limit by default: hard CPU caps throttle all pooled traffic.
+	if _, ok := cfg.Resources.Limits[corev1.ResourceCPU]; ok {
+		t.Errorf("cpu limit must be unset by default, got %v", cfg.Resources.Limits.Cpu())
+	}
+}
+
+func TestNewFromCluster_CustomResources(t *testing.T) {
+	cfg := NewFromCluster(clusterWithParams(map[string]string{
+		"sidecarCpuRequest":    "1",
+		"sidecarMemoryRequest": "256Mi",
+		"sidecarCpuLimit":      "2",
+		"sidecarMemoryLimit":   "2Gi",
+	}))
+
+	if got := cfg.Resources.Requests.Cpu().String(); got != "1" {
+		t.Errorf("cpu request = %s, want 1", got)
+	}
+	if got := cfg.Resources.Limits.Cpu().String(); got != "2" {
+		t.Errorf("cpu limit = %s, want 2", got)
+	}
+	if got := cfg.Resources.Limits.Memory().String(); got != "2Gi" {
+		t.Errorf("memory limit = %s, want 2Gi", got)
+	}
+	cfg.SidecarImage = "wrapper:test"
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("valid resources must pass validation, got %v", err)
+	}
+}
+
+func TestNewFromCluster_ResourceNone(t *testing.T) {
+	cfg := NewFromCluster(clusterWithParams(map[string]string{
+		"sidecarMemoryLimit": "none",
+	}))
+
+	if _, ok := cfg.Resources.Limits[corev1.ResourceMemory]; ok {
+		t.Errorf("memory limit must be unset with 'none', got %v", cfg.Resources.Limits.Memory())
+	}
+}
+
+func TestNewFromCluster_InvalidResourceQuantity(t *testing.T) {
+	cfg := NewFromCluster(clusterWithParams(map[string]string{
+		"sidecarMemoryLimit": "lots",
+	}))
+
+	if err := cfg.Validate(); err == nil {
+		t.Error("invalid quantity must fail validation")
+	}
+}
+
+func TestValidate_RequestAboveLimit(t *testing.T) {
+	cfg := NewFromCluster(clusterWithParams(map[string]string{
+		"sidecarMemoryRequest": "1Gi",
+		"sidecarMemoryLimit":   "512Mi",
+	}))
+
+	if err := cfg.Validate(); err == nil {
+		t.Error("memory request above limit must fail validation")
 	}
 }

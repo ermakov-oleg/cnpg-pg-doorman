@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/o-ermakov/cnpg-pg-doorman/pkg/metadata"
 )
@@ -15,9 +17,23 @@ const (
 	DefaultPoolerPort  = 6432
 	DefaultMetricsPort = 9127
 
+	// Sidecar resource defaults. No CPU limit: pg_doorman runs 4 tokio worker
+	// threads by default and a hard CPU cap throttles all pooled traffic.
+	DefaultSidecarCPURequest    = "100m"
+	DefaultSidecarMemoryRequest = "128Mi"
+	DefaultSidecarMemoryLimit   = "512Mi"
+
 	ParamPoolerPort  = "poolerPort"
 	ParamMetricsPort = "metricsPort"
 	ParamConfigName  = "configName"
+
+	ParamSidecarCPURequest    = "sidecarCpuRequest"
+	ParamSidecarMemoryRequest = "sidecarMemoryRequest"
+	ParamSidecarCPULimit      = "sidecarCpuLimit"
+	ParamSidecarMemoryLimit   = "sidecarMemoryLimit"
+
+	// ResourceNone unsets a defaulted resource value (e.g. no memory limit).
+	ResourceNone = "none"
 )
 
 type PluginConfiguration struct {
@@ -26,6 +42,7 @@ type PluginConfiguration struct {
 	MetricsPort  int
 	ConfigName   string
 	SidecarImage string
+	Resources    corev1.ResourceRequirements
 	ParseErrors  []string
 }
 
@@ -64,10 +81,43 @@ func NewFromCluster(cluster *cnpgv1.Cluster) *PluginConfiguration {
 			cfg.ConfigName = v
 		}
 
+		cfg.Resources = corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{},
+			Limits:   corev1.ResourceList{},
+		}
+		cfg.setResource(plugin.Parameters, ParamSidecarCPURequest, cfg.Resources.Requests, corev1.ResourceCPU, DefaultSidecarCPURequest)
+		cfg.setResource(plugin.Parameters, ParamSidecarMemoryRequest, cfg.Resources.Requests, corev1.ResourceMemory, DefaultSidecarMemoryRequest)
+		cfg.setResource(plugin.Parameters, ParamSidecarCPULimit, cfg.Resources.Limits, corev1.ResourceCPU, "")
+		cfg.setResource(plugin.Parameters, ParamSidecarMemoryLimit, cfg.Resources.Limits, corev1.ResourceMemory, DefaultSidecarMemoryLimit)
+
 		break
 	}
 
 	return cfg
+}
+
+// setResource fills one resource entry from the plugin parameter, falling back
+// to defaultVal. Empty default or the explicit "none" value leaves it unset.
+func (c *PluginConfiguration) setResource(
+	params map[string]string,
+	param string,
+	list corev1.ResourceList,
+	name corev1.ResourceName,
+	defaultVal string,
+) {
+	val := defaultVal
+	if v, ok := params[param]; ok {
+		val = v
+	}
+	if val == "" || val == ResourceNone {
+		return
+	}
+	q, err := resource.ParseQuantity(val)
+	if err != nil {
+		c.ParseErrors = append(c.ParseErrors, fmt.Sprintf("%s: invalid quantity %q", param, val))
+		return
+	}
+	list[name] = q
 }
 
 func (c *PluginConfiguration) Validate() error {
@@ -88,6 +138,13 @@ func (c *PluginConfiguration) Validate() error {
 	}
 	if c.PoolerPort == c.MetricsPort {
 		return fmt.Errorf("%s and %s must be different", ParamPoolerPort, ParamMetricsPort)
+	}
+	for _, name := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
+		req, hasReq := c.Resources.Requests[name]
+		limit, hasLimit := c.Resources.Limits[name]
+		if hasReq && hasLimit && req.Cmp(limit) > 0 {
+			return fmt.Errorf("sidecar %s request %s exceeds limit %s", name, req.String(), limit.String())
+		}
 	}
 	return nil
 }

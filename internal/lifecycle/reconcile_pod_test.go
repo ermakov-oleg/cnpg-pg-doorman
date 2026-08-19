@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/o-ermakov/cnpg-pg-doorman/internal/config"
 )
@@ -99,5 +100,23 @@ func TestInjectSidecarIdempotent(t *testing.T) {
 	}
 	if got := len(spec.Volumes); got != 1 {
 		t.Errorf("expected 1 volume after double injection, got %d", got)
+	}
+}
+
+func TestInjectSidecarResourcesFromConfig(t *testing.T) {
+	cfg := testPluginConfig()
+	cfg.Resources = corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("256Mi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+	}
+	spec := &corev1.PodSpec{}
+	injectSidecar(spec, cfg, "cluster", "ns")
+
+	sidecar := findSidecar(t, spec)
+	if got := sidecar.Resources.Limits.Memory().String(); got != "1Gi" {
+		t.Errorf("memory limit = %s, want 1Gi (must come from plugin config)", got)
+	}
+	if got := sidecar.Resources.Requests.Memory().String(); got != "256Mi" {
+		t.Errorf("memory request = %s, want 256Mi", got)
 	}
 }
