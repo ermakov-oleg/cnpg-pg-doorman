@@ -7,6 +7,13 @@ import (
 
 // PgDoormanSpec defines the desired state of PgDoorman.
 type PgDoormanSpec struct {
+	// ClusterRef names the CNPG Cluster this configuration belongs to. It is
+	// the source of truth for the Cluster<->PgDoorman relation (the
+	// configName plugin parameter is only discovery), enabling ownership,
+	// status aggregation and admission validation. Immutable.
+	// +kubebuilder:validation:XValidation:rule="self.name == oldSelf.name",message="clusterRef is immutable"
+	ClusterRef machineryapi.LocalObjectReference `json:"clusterRef"`
+
 	// Pools defines the connection pools.
 	// +kubebuilder:validation:MinProperties=1
 	Pools map[string]PoolSpec `json:"pools"`

@@ -12,6 +12,8 @@ kind: PgDoorman
 metadata:
   name: my-cluster-doorman
 spec:
+  clusterRef:
+    name: my-cluster
   pools:
     app:
       authQuery:
