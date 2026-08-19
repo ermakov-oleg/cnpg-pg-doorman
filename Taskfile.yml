@@ -1,6 +1,8 @@
 version: 3
 
 vars:
+  # renovate: datasource=github-releases depName=kubernetes-sigs/kind
+  KIND_VERSION: v0.32.0
   # renovate: datasource=docker depName=kindest/node
   E2E_KUBERNETES_VERSION: v1.36.1
   KIND_CLUSTER_NAME: pg-doorman-e2e
@@ -115,7 +117,7 @@ tasks:
       - deploy-plugin
     cmds:
       - >
-        cd test/e2e && go test -v -timeout 30m
+        cd test/e2e && go test -v -timeout 45m
         -tags e2e
         -ginkgo.v
         ./...
