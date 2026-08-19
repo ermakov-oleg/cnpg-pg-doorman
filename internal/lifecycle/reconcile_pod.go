@@ -11,7 +11,6 @@ import (
 	"github.com/o-ermakov/cnpg-pg-doorman/internal/config"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 )
@@ -89,16 +88,7 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluste
 				MountPath: scratchMountPath,
 			},
 		},
-		Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("50m"),
-				corev1.ResourceMemory: resource.MustParse("64Mi"),
-			},
-			Limits: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("500m"),
-				corev1.ResourceMemory: resource.MustParse("256Mi"),
-			},
-		},
+		Resources: cfg.Resources,
 		// No readiness probe: native sidecar readiness gates readiness of the
 		// whole pod, so a broken pooler would drop a healthy PostgreSQL from
 		// all Service endpoints (-rw/-ro/-r) and stall rolling updates.

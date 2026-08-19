@@ -162,6 +162,10 @@ Parameters passed via `spec.plugins[].parameters` in the CNPG Cluster:
 | `poolerPort`  | `6432`  | Port pg_doorman listens on               |
 | `metricsPort` | `9127`  | Port for Prometheus metrics              |
 | `configName`  | —       | **Required.** Name of the `PgDoorman` CR to watch |
+| `sidecarCpuRequest`    | `100m`  | Sidecar CPU request                |
+| `sidecarMemoryRequest` | `128Mi` | Sidecar memory request             |
+| `sidecarCpuLimit`      | —       | Sidecar CPU limit (unset by default: a hard CPU cap throttles pooled traffic) |
+| `sidecarMemoryLimit`   | `512Mi` | Sidecar memory limit; `none` removes it |
 
 ### PgDoorman CRD
 
