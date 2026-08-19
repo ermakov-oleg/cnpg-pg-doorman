@@ -1,3 +1,12 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-cluster-doorman-auth
+type: kubernetes.io/basic-auth
+stringData:
+  username: doorman_auth
+  password: "generate-a-strong-password-here"
+---
 apiVersion: pg-doorman.cnpg.io/v1alpha1
 kind: PgDoorman
 metadata:
@@ -7,3 +16,6 @@ spec:
     app:
       authQuery:
         user: doorman_auth
+        passwordSecretRef:
+          name: my-cluster-doorman-auth
+          key: password

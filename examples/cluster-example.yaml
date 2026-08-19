@@ -12,10 +12,22 @@ spec:
         metricsPort: "9127"
         configName: "my-cluster-doorman"
 
+  managed:
+    roles:
+      # CNPG keeps the doorman_auth password in sync with the Secret,
+      # including rotation. The same Secret is referenced by
+      # authQuery.passwordSecretRef in the PgDoorman resource.
+      - name: doorman_auth
+        login: true
+        inherit: false
+        passwordSecret:
+          name: my-cluster-doorman-auth
+
   postgresql:
     pg_hba:
-      # Allow doorman_auth to connect via localhost without password (for auth_query)
-      - host all doorman_auth 127.0.0.1/32 trust
+      # doorman_auth authenticates with its password; never use `trust` here:
+      # any process in the pod could dump password hashes of all roles.
+      - host all doorman_auth 127.0.0.1/32 scram-sha-256
 
   bootstrap:
     initdb:
