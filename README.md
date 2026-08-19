@@ -61,8 +61,14 @@ CloudNativePG provides connection pooling through its `Pooler` CRD, which deploy
 ## Prerequisites
 
 - Kubernetes 1.29+ (requires [native sidecar containers](https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/) support)
-- [CloudNativePG](https://cloudnative-pg.io/) 1.24+ (with plugin support)
+- [CloudNativePG](https://cloudnative-pg.io/) 1.25+
 - [cert-manager](https://cert-manager.io/)
+
+Verified by CI: the latest kindest/CNPG combination on every run, plus a manual
+bounds check (`e2e-bounds` workflow job). CNPG 1.25.2 on Kubernetes v1.31 passes
+the full suite; CNPG 1.24 works except automatic pod rollout when the sidecar
+image changes (its drift detection misses plugin-injected pod spec changes), so
+plugin upgrades there require a manual rollout.
 
 ## Installation
 
