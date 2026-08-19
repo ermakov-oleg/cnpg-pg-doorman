@@ -195,6 +195,14 @@ For in-pod communication (e.g. from application sidecars), connect to `localhost
 > instance forever. Clients must implement reconnect-on-error; on reconnect the
 > Service routes them to the new primary.
 
+## Monitoring
+
+pg_doorman exposes Prometheus metrics on the `metricsPort` (default `9127`),
+declared as the named container port `pgd-metrics` on the sidecar. The
+PodMonitor CNPG creates for the cluster scrapes only the `metrics` port of the
+postgres container (9187) — pg_doorman metrics need their own scrape config,
+e.g. [examples/podmonitor-example.yaml](examples/podmonitor-example.yaml).
+
 ## Configuration Reference
 
 ### Plugin Parameters
