@@ -2,6 +2,8 @@ package plugin
 
 import (
 	"context"
+	"fmt"
+	"os"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/http"
@@ -26,11 +28,13 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/ermakov-oleg/cnpg-pg-doorman/api/v1alpha1"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/binaries"
 	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/controller"
 	pluginIdentity "github.com/ermakov-oleg/cnpg-pg-doorman/internal/identity"
 	pluginLifecycle "github.com/ermakov-oleg/cnpg-pg-doorman/internal/lifecycle"
 	pluginOperator "github.com/ermakov-oleg/cnpg-pg-doorman/internal/operator"
 	pluginReconciler "github.com/ermakov-oleg/cnpg-pg-doorman/internal/reconciler"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/wrapper"
 )
 
 var scheme = runtime.NewScheme()
@@ -105,6 +109,15 @@ func NewCmd() *cobra.Command {
 	_ = viper.BindPFlag("health-probe-bind-address", cmd.Flags().Lookup("health-probe-bind-address"))
 	cmd.Flags().String("metrics-bind-address", ":8080", "The address the metrics endpoint binds to ('0' disables it)")
 	_ = viper.BindPFlag("metrics-bind-address", cmd.Flags().Lookup("metrics-bind-address"))
+	cmd.Flags().String("binary-bind-address", ":9091",
+		"The address the pg_doorman binary delivery endpoint binds to ('0' disables it)")
+	_ = viper.BindPFlag("binary-bind-address", cmd.Flags().Lookup("binary-bind-address"))
+	cmd.Flags().String("binary-base-url", "",
+		"External base URL of the binary delivery endpoint, published to wrappers (empty disables delivery)")
+	_ = viper.BindPFlag("binary-base-url", cmd.Flags().Lookup("binary-base-url"))
+	cmd.Flags().String("binary-ca-file", "",
+		"PEM CA bundle wrappers use to verify the delivery endpoint TLS certificate")
+	_ = viper.BindPFlag("binary-ca-file", cmd.Flags().Lookup("binary-ca-file"))
 
 	// Override RunE to create a manager first (needed for k8s client in ReconcilerHooks)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
@@ -150,9 +163,19 @@ func NewCmd() *cobra.Command {
 			return err
 		}
 
+		binarySpec, err := loadBinarySpec(
+			viper.GetString("binary-base-url"),
+			viper.GetString("binary-ca-file"),
+		)
+		if err != nil {
+			logger.Error(err, "unable to load binary delivery manifest")
+			return err
+		}
+
 		if err := (&controller.RenderedConfigReconciler{
 			Client:   mgr.GetClient(),
 			Recorder: mgr.GetEventRecorderFor("pg-doorman-render"),
+			Binary:   binarySpec,
 		}).SetupWithManager(mgr); err != nil {
 			slogError(ctx, err, "unable to set up rendered config controller")
 			return err
@@ -179,9 +202,43 @@ func NewCmd() *cobra.Command {
 			return err
 		}
 
+		if addr := viper.GetString("binary-bind-address"); binarySpec != nil && addr != "" && addr != "0" {
+			if err := mgr.Add(&binaries.Server{
+				Dir:      binaries.DefaultDir,
+				Addr:     addr,
+				CertPath: viper.GetString("server-cert"),
+				KeyPath:  viper.GetString("server-key"),
+			}); err != nil {
+				logger.Error(err, "unable to add binary delivery server")
+				return err
+			}
+		}
+
 		logger.Info("starting manager")
 		return mgr.Start(ctx)
 	}
 
 	return cmd
+}
+
+// loadBinarySpec assembles the desired-binary contract published to wrappers.
+// Delivery is disabled (nil spec) when the image carries no binaries or no
+// base URL is configured.
+func loadBinarySpec(baseURL, caFile string) (*wrapper.BinarySpec, error) {
+	manifest, err := binaries.LoadManifest(binaries.DefaultDir)
+	if err != nil {
+		return nil, err
+	}
+	if manifest == nil || baseURL == "" {
+		return nil, nil
+	}
+	spec := &wrapper.BinarySpec{URL: baseURL, SHA256: manifest}
+	if caFile != "" {
+		ca, err := os.ReadFile(caFile) //nolint:gosec // caFile is an operator-provided flag, not user input
+		if err != nil {
+			return nil, fmt.Errorf("reading binary CA bundle: %w", err)
+		}
+		spec.CABundle = string(ca)
+	}
+	return spec, nil
 }

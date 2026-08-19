@@ -13,8 +13,13 @@ metadata:
   namespace: {{ .Release.Namespace }}
 spec:
   ports:
-    - port: 9090
+    - name: grpc
+      port: 9090
       protocol: TCP
       targetPort: 9090
+    - name: binary
+      port: 9091
+      protocol: TCP
+      targetPort: 9091
   selector:
     {{- include "cnpg-pg-doorman.selectorLabels" . | nindent 4 }}

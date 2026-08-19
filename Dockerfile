@@ -9,7 +9,25 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -o /plugin ./main.go
 
+# pg_doorman for in-place upgrade delivery: both architectures, because a
+# pooler pod may run on a different arch than the plugin pod serving it.
+FROM --platform=linux/amd64 ghcr.io/ozontech/pg_doorman:v3.11.0@sha256:b4c32c60e4267bbfe5ddd138c53a16e9f2e143fc64d7b3fae879b711d0db8578 AS doorman-amd64
+FROM --platform=linux/arm64 ghcr.io/ozontech/pg_doorman:v3.11.0@sha256:b4c32c60e4267bbfe5ddd138c53a16e9f2e143fc64d7b3fae879b711d0db8578 AS doorman-arm64
+
+FROM --platform=$BUILDPLATFORM golang:1.26@sha256:0d1d3a794be25f809dd2cb3160d8c73276c4056a9f8242a138e908ddeee7b6b6 AS binaries
+# E2E_BINARY_MARKER appends bytes to produce a content-distinct binary of the
+# same version: e2e exercises the delivery/upgrade machinery without needing
+# a second upstream release with a compatible config schema.
+ARG E2E_BINARY_MARKER=""
+COPY --from=doorman-amd64 /usr/bin/pg_doorman /binaries/amd64/pg_doorman
+COPY --from=doorman-arm64 /usr/bin/pg_doorman /binaries/arm64/pg_doorman
+RUN if [ -n "$E2E_BINARY_MARKER" ]; then \
+      printf '%s' "$E2E_BINARY_MARKER" >> /binaries/amd64/pg_doorman && \
+      printf '%s' "$E2E_BINARY_MARKER" >> /binaries/arm64/pg_doorman; \
+    fi
+
 FROM gcr.io/distroless/static:nonroot@sha256:f7f8f729987ad0fdf6b05eeeae94b26e6a0f613bdf46feea7fc40f7bd72953e6
 COPY --from=builder /plugin /plugin
+COPY --from=binaries /binaries /binaries
 USER 10001:10001
 ENTRYPOINT ["/plugin"]
