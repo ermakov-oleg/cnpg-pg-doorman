@@ -14,12 +14,7 @@ import (
 
 func writePEM(t *testing.T, path, blockType string, der []byte) {
 	t.Helper()
-	f, err := os.Create(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	if err := pem.Encode(f, &pem.Block{Type: blockType, Bytes: der}); err != nil {
+	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: blockType, Bytes: der}), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
