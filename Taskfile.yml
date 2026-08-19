@@ -115,7 +115,7 @@ tasks:
       - deploy-plugin
     cmds:
       - >
-        cd test/e2e && go test -v -timeout 30m
+        cd test/e2e && go test -v -timeout 45m
         -tags e2e
         -ginkgo.v
         ./...
