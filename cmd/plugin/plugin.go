@@ -88,6 +88,8 @@ func NewCmd() *cobra.Command {
 	_ = viper.BindPFlag("leader-elect", cmd.Flags().Lookup("leader-elect"))
 	cmd.Flags().String("health-probe-bind-address", ":8081", "The address the probe endpoint binds to")
 	_ = viper.BindPFlag("health-probe-bind-address", cmd.Flags().Lookup("health-probe-bind-address"))
+	cmd.Flags().String("metrics-bind-address", ":8080", "The address the metrics endpoint binds to ('0' disables it)")
+	_ = viper.BindPFlag("metrics-bind-address", cmd.Flags().Lookup("metrics-bind-address"))
 
 	// Override RunE to create a manager first (needed for k8s client in ReconcilerHooks)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
@@ -97,7 +99,7 @@ func NewCmd() *cobra.Command {
 		mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 			Scheme: scheme,
 			Metrics: metricsserver.Options{
-				BindAddress: "0", // disabled
+				BindAddress: viper.GetString("metrics-bind-address"),
 			},
 			HealthProbeBindAddress: viper.GetString("health-probe-bind-address"),
 			LeaderElection:         viper.GetBool("leader-elect"),

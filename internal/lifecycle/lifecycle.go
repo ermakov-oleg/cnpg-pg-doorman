@@ -10,6 +10,7 @@ import (
 	"github.com/cloudnative-pg/machinery/pkg/log"
 
 	"github.com/o-ermakov/cnpg-pg-doorman/internal/config"
+	"github.com/o-ermakov/cnpg-pg-doorman/internal/metrics"
 )
 
 type Implementation struct {
@@ -35,6 +36,15 @@ func (impl Implementation) GetCapabilities(
 }
 
 func (impl Implementation) LifecycleHook(
+	ctx context.Context,
+	request *lifecycle.OperatorLifecycleRequest,
+) (*lifecycle.OperatorLifecycleResponse, error) {
+	return metrics.Observe(ctx, "lifecycle.LifecycleHook", func() (*lifecycle.OperatorLifecycleResponse, error) {
+		return impl.lifecycleHook(ctx, request)
+	})
+}
+
+func (impl Implementation) lifecycleHook(
 	ctx context.Context,
 	request *lifecycle.OperatorLifecycleRequest,
 ) (*lifecycle.OperatorLifecycleResponse, error) {
