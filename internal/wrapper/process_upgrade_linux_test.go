@@ -200,7 +200,7 @@ func TestWaitUntilGoneReturnsOnlyAfterProcessDisappears(t *testing.T) {
 	pid := cmd.Process.Pid
 
 	done := make(chan error, 1)
-	go func() { done <- waitUntilGone(context.Background(), pid) }()
+	go func() { done <- waitUntilGone(context.Background(), pid, 0) }()
 
 	select {
 	case err := <-done:
@@ -221,6 +221,40 @@ func TestWaitUntilGoneReturnsOnlyAfterProcessDisappears(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("waitUntilGone did not return after the process disappeared")
+	}
+}
+
+// Cancellation must not cut the drain short: terminateIfAdopted has just sent
+// SIGTERM and the process is entitled to its shutdown_timeout before the wrapper
+// (PID 1) goes away.
+func TestWaitUntilGoneKeepsDrainingAfterCancel(t *testing.T) {
+	cmd := exec.Command("/bin/sh", "-c", "while :; do sleep 0.05; done")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	pid := cmd.Process.Pid
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	const drain = 600 * time.Millisecond
+	started := time.Now()
+	done := make(chan error, 1)
+	go func() { done <- waitUntilGone(ctx, pid, drain) }()
+
+	select {
+	case err := <-done:
+		if elapsed := time.Since(started); elapsed < drain {
+			t.Fatalf("returned after %v with %v, want at least the %v drain", elapsed, err, drain)
+		}
+		if err == nil {
+			t.Error("giving up on a live process must return an error")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("waitUntilGone did not return after the drain")
 	}
 }
 

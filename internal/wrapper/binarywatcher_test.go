@@ -69,10 +69,16 @@ func TestBinaryWatcherUnchangedSpecIsNoop(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.Seed(data)
+	BinaryStale.Set(0)
 	w.check(context.Background())
 
 	if up.upgrades != 0 {
 		t.Errorf("upgrades = %d, want 0", up.upgrades)
+	}
+	// The spec is unsatisfied but unchanged: nothing at all may happen, and a
+	// download attempt would have marked the binary stale.
+	if got := testutil.ToFloat64(BinaryStale); got != 0 {
+		t.Errorf("binary_stale = %v, want 0: an unchanged spec must not be acted on", got)
 	}
 }
 
@@ -125,6 +131,19 @@ func TestBinaryWatcherDownloadsValidatesAndUpgrades(t *testing.T) {
 	// The e2e suite matches this line to detect a live upgrade.
 	if !strings.Contains(logs.String(), "in-place binary upgrade triggered") {
 		t.Errorf("missing upgrade log line, got: %s", logs.String())
+	}
+
+	// lastSpec was advanced by the check above, not seeded: dropping the runtime
+	// binary would otherwise make the second check download and upgrade again.
+	if err := os.Remove(w.runtimePath); err != nil {
+		t.Fatal(err)
+	}
+	w.check(context.Background())
+	if up.upgrades != 1 {
+		t.Errorf("upgrades = %d after an unchanged spec, want 1", up.upgrades)
+	}
+	if _, err := os.Stat(w.runtimePath); !os.IsNotExist(err) {
+		t.Error("the second check must not act on an unchanged spec")
 	}
 }
 

@@ -141,9 +141,10 @@ func (p *Process) signalLocked(sig syscall.Signal) error {
 
 func (p *Process) Wait() error { return p.waitCtx(context.Background()) }
 
-// waitCtx blocks until the supervised process exits, giving up when ctx is done
-// (the adopted process is polled, so cancellation cannot be delivered by the
-// runtime as it is for an exec.Cmd child).
+// waitCtx blocks until the supervised process exits. Cancellation does not cut
+// the wait short — the adopted process still gets its drain — it only bounds it,
+// since the adopted process is polled instead of being handled by the runtime as
+// an exec.Cmd child is.
 func (p *Process) waitCtx(ctx context.Context) error {
 	p.mu.Lock()
 	cmd := p.cmd
@@ -151,7 +152,7 @@ func (p *Process) waitCtx(ctx context.Context) error {
 	p.mu.Unlock()
 
 	if adopted != 0 {
-		err := waitPid(ctx, adopted)
+		err := waitPid(ctx, adopted, p.waitDelay())
 		// Forget the pid we just reaped: a SIGKILL timer armed by
 		// terminateIfAdopted must not fire at whoever reuses that pid next.
 		p.mu.Lock()
@@ -170,7 +171,7 @@ func (p *Process) waitCtx(ctx context.Context) error {
 // waitPid blocks until the adopted process exits. Only the adopted successor is
 // waited this way: a global wait4(-1) reaper would steal exit statuses from the
 // exec.Cmd users, such as the config validator.
-func waitPid(ctx context.Context, pid int) error {
+func waitPid(ctx context.Context, pid int, drain time.Duration) error {
 	var ws syscall.WaitStatus
 	for {
 		_, err := syscall.Wait4(pid, &ws, 0, nil)
@@ -180,7 +181,7 @@ func waitPid(ctx context.Context, pid int) error {
 		if errors.Is(err, syscall.ECHILD) {
 			// Not our child: reporting an exit now would restart pg_doorman
 			// while it is still serving. Wait for it to actually disappear.
-			return waitUntilGone(ctx, pid)
+			return waitUntilGone(ctx, pid, drain)
 		}
 		if err != nil {
 			return fmt.Errorf("wait4 pid %d: %w", pid, err)
@@ -193,20 +194,26 @@ func waitPid(ctx context.Context, pid int) error {
 	return nil
 }
 
-// waitUntilGone polls liveness until the process no longer exists, or until ctx
-// is done: on shutdown the caller's terminateIfAdopted kills pid anyway, but the
-// poll must not outlive the supervisor if the kill does not land.
-func waitUntilGone(ctx context.Context, pid int) error {
+// waitUntilGone polls liveness until the process no longer exists. Cancellation
+// does not end the poll: terminateIfAdopted has just sent SIGTERM, the process is
+// entitled to its shutdown_timeout drain, and the armed SIGKILL only lands while
+// this pid is still the supervised one. It merely bounds the poll by drain,
+// measured from the cancellation, so the supervisor cannot hang if neither
+// signal ends the process.
+func waitUntilGone(ctx context.Context, pid int, drain time.Duration) error {
+	var giveUp time.Time
 	for {
 		err := syscall.Kill(pid, 0)
 		if errors.Is(err, syscall.ESRCH) {
 			return fmt.Errorf("%w: pid %d disappeared", errAdoptedNotChild, pid)
 		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(adoptedLivenessInterval):
+		if giveUp.IsZero() && ctx.Err() != nil {
+			giveUp = time.Now().Add(drain)
 		}
+		if !giveUp.IsZero() && time.Now().After(giveUp) {
+			return fmt.Errorf("adopted pg_doorman pid %d still alive after the drain: %w", pid, ctx.Err())
+		}
+		time.Sleep(adoptedLivenessInterval)
 	}
 }
 
