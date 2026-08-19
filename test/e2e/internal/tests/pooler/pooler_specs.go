@@ -103,6 +103,21 @@ func getPodName(ctx SpecContext, cl client.Client, ns, clusterName string) strin
 	return ""
 }
 
+// getPodNameByRole returns the pod name of the cluster instance with the given
+// role ("primary" or "replica"), using the cnpg.io/instanceRole label.
+func getPodNameByRole(ctx SpecContext, cl client.Client, ns, clusterName, role string) (string, bool) {
+	var podList corev1.PodList
+	Expect(cl.List(ctx, &podList, client.InNamespace(ns),
+		client.MatchingLabels{
+			"cnpg.io/cluster":      clusterName,
+			"cnpg.io/instanceRole": role,
+		})).To(Succeed())
+	if len(podList.Items) == 0 {
+		return "", false
+	}
+	return podList.Items[0].Name, true
+}
+
 var _ = Describe("pg_doorman pooler", func() {
 	var (
 		ns         *corev1.Namespace
@@ -293,17 +308,19 @@ var _ = Describe("pg_doorman pooler", func() {
 		}
 		Expect(cl.Update(ctx, &pgDoorman)).To(Succeed())
 
-		By("waiting for CRD change to propagate via polling")
-		time.Sleep(10 * time.Second)
+		// Worst-case detection latency is ~15s: 5s CR poll on top of the 10s
+		// ExtendedClient TTL cache — a fixed 10s sleep flaked (seen on PR #19).
+		By("waiting for wrapper to reload the config")
+		Eventually(func() string {
+			return getSidecarLogs(ctx, clientset, ns.Name, podName)
+		}).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(
+			ContainSubstring("config reloaded successfully"),
+		)
 
 		By("verifying pod was NOT restarted (same UID)")
 		var podAfter corev1.Pod
 		Expect(cl.Get(ctx, types.NamespacedName{Name: podName, Namespace: ns.Name}, &podAfter)).To(Succeed())
 		Expect(podAfter.UID).To(Equal(uidBefore))
-
-		By("checking wrapper logs for successful reload")
-		logs := getSidecarLogs(ctx, clientset, ns.Name, podName)
-		Expect(logs).To(ContainSubstring("config reloaded successfully"))
 	})
 
 	// Test 7: Image update triggers rolling restart
@@ -379,18 +396,37 @@ var _ = Describe("pg_doorman pooler", func() {
 			time.Sleep(1 * time.Second)
 		}
 
-		By("waiting for polling propagation")
-		time.Sleep(10 * time.Second)
+		By("waiting for wrapper to reload the config")
+		Eventually(func() string {
+			return getSidecarLogs(ctx, clientset, ns.Name, podName)
+		}).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(
+			ContainSubstring("config reloaded successfully"),
+		)
 
-		By("checking that wrapper logs show config reloaded")
-		logs := getSidecarLogs(ctx, clientset, ns.Name, podName)
-		Expect(logs).To(ContainSubstring("config reloaded successfully"))
-
+		// workerThreads is non-reloadable: the wrapper restarts the pooler, so
+		// tolerate the short restart window.
 		By("verifying pooler still works after rapid updates")
 		password := getAppPassword(ctx, cl, ns.Name, clusterName)
-		stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(stdout).To(ContainSubstring("1"))
+		Eventually(func(g Gomega) {
+			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(stdout).To(ContainSubstring("1"))
+		}).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+
+		By("verifying the config file inside the sidecar contains the value from the last update")
+		Eventually(func(g Gomega) {
+			stdout, _, err := command.ExecuteInContainer(ctx, clientset, restConfig,
+				command.ContainerLocator{
+					NamespaceName: ns.Name,
+					PodName:       podName,
+					ContainerName: "pg-doorman",
+				},
+				nil,
+				[]string{"cat", "/tmp/pg_doorman.yaml"},
+			)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(stdout).To(ContainSubstring("worker_threads: 8"))
+		}).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 	})
 
 	// Test 10: Cluster without plugin passes admission
@@ -551,5 +587,144 @@ var _ = Describe("pg_doorman pooler", func() {
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(stdout).To(ContainSubstring("1"))
 		}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+	})
+
+	// Test 14: Failover — pooler serves read-write traffic on the new primary
+	It("should serve read-write traffic via pooler after failover", func(ctx SpecContext) {
+		configName := "cr-failover"
+		clusterName := "test-failover"
+
+		By("creating PgDoorman CR")
+		Expect(cl.Create(ctx, newPgDoorman(ns.Name, configName))).To(Succeed())
+
+		By("creating 2-instance Cluster")
+		Expect(cl.Create(ctx, newClusterWithInstances(ns.Name, clusterName, configName, 2))).To(Succeed())
+
+		By("waiting for cluster to be ready")
+		Eventually(func(g Gomega) {
+			var current cnpgv1.Cluster
+			g.Expect(cl.Get(ctx, types.NamespacedName{
+				Name: clusterName, Namespace: ns.Name,
+			}, &current)).To(Succeed())
+			g.Expect(cluster.IsReady(current)).To(BeTrue())
+		}).WithTimeout(15 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+
+		var clusterBefore cnpgv1.Cluster
+		Expect(cl.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: ns.Name}, &clusterBefore)).To(Succeed())
+		primaryBefore := clusterBefore.Status.CurrentPrimary
+		Expect(primaryBefore).NotTo(BeEmpty())
+
+		By("verifying the sidecar is injected into the replica pod too")
+		replicaName, found := getPodNameByRole(ctx, cl, ns.Name, clusterName, "replica")
+		Expect(found).To(BeTrue(), "no replica pod found")
+		var replicaPod corev1.Pod
+		Expect(cl.Get(ctx, types.NamespacedName{Name: replicaName, Namespace: ns.Name}, &replicaPod)).To(Succeed())
+		sidecarFound := false
+		for _, c := range replicaPod.Spec.InitContainers {
+			if c.Name == "pg-doorman" {
+				sidecarFound = true
+			}
+		}
+		Expect(sidecarFound).To(BeTrue(), "pg-doorman sidecar not found on replica pod")
+
+		By("deleting the primary pod to trigger failover")
+		var primaryPod corev1.Pod
+		Expect(cl.Get(ctx, types.NamespacedName{Name: primaryBefore, Namespace: ns.Name}, &primaryPod)).To(Succeed())
+		Expect(cl.Delete(ctx, &primaryPod)).To(Succeed())
+
+		By("waiting for the replica to be promoted to primary")
+		var newPrimary string
+		Eventually(func(g Gomega) {
+			var current cnpgv1.Cluster
+			g.Expect(cl.Get(ctx, types.NamespacedName{
+				Name: clusterName, Namespace: ns.Name,
+			}, &current)).To(Succeed())
+			g.Expect(current.Status.CurrentPrimary).NotTo(BeEmpty())
+			g.Expect(current.Status.CurrentPrimary).NotTo(Equal(primaryBefore))
+			newPrimary = current.Status.CurrentPrimary
+		}).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+
+		By("verifying pooler on the new primary serves read-write traffic")
+		password := getAppPassword(ctx, cl, ns.Name, clusterName)
+		Eventually(func(g Gomega) {
+			_, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, newPrimary, password, "app", "app",
+				"CREATE TABLE IF NOT EXISTS failover_smoke (id int); INSERT INTO failover_smoke VALUES (1)")
+			g.Expect(err).NotTo(HaveOccurred())
+		}).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+
+		stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, newPrimary, password, "app", "app",
+			"SELECT count(*) FROM failover_smoke")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(strings.TrimSpace(stdout)).NotTo(Equal("0"))
+	})
+
+	// Test 15: PgDoorman CR deletion — wrapper keeps last-good config,
+	// pooler keeps serving; recreating the CR resumes config updates.
+	It("should keep serving connections after PgDoorman CR deletion and resume updates after recreation", func(ctx SpecContext) {
+		configName := "cr-delete"
+		clusterName := "test-cr-delete"
+		createClusterAndWait(ctx, cl, ns, clusterName, configName)
+		podName := getPodName(ctx, cl, ns.Name, clusterName)
+		password := getAppPassword(ctx, cl, ns.Name, clusterName)
+
+		By("verifying pooler works before CR deletion")
+		Eventually(func(g Gomega) {
+			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(stdout).To(ContainSubstring("1"))
+		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+
+		By("deleting the PgDoorman CR")
+		var pgDoorman pgdoormanv1alpha1.PgDoorman
+		Expect(cl.Get(ctx, types.NamespacedName{Name: configName, Namespace: ns.Name}, &pgDoorman)).To(Succeed())
+		Expect(cl.Delete(ctx, &pgDoorman)).To(Succeed())
+
+		By("waiting for wrapper to log a warning about the missing CR")
+		Eventually(func() string {
+			return getSidecarLogs(ctx, clientset, ns.Name, podName)
+		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(
+			ContainSubstring("failed to get PgDoorman CR"),
+		)
+
+		By("verifying pooler keeps serving connections with the last-good config")
+		Consistently(func(g Gomega) {
+			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(stdout).To(ContainSubstring("1"))
+		}).WithTimeout(15 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
+
+		By("recreating the PgDoorman CR with a config change")
+		recreated := newPgDoorman(ns.Name, configName)
+		recreated.Spec.General.WorkerThreads = ptr.To(4)
+		Expect(cl.Create(ctx, recreated)).To(Succeed())
+
+		By("waiting for wrapper to reload the config from the recreated CR")
+		Eventually(func() string {
+			return getSidecarLogs(ctx, clientset, ns.Name, podName)
+		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(
+			ContainSubstring("config reloaded successfully"),
+		)
+
+		// The workerThreads change is non-reloadable: the wrapper gracefully
+		// restarts pg_doorman, so tolerate the short restart window.
+		By("verifying pooler still works after CR recreation")
+		Eventually(func(g Gomega) {
+			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(stdout).To(ContainSubstring("1"))
+		}).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+	})
+
+	// Test 16: Invalid poolMode is rejected at admission by CRD enum validation.
+	It("should reject PgDoorman CR with invalid poolMode at admission", func(ctx SpecContext) {
+		cr := newPgDoorman(ns.Name, "cr-invalid-mode")
+		pool := cr.Spec.Pools["app"]
+		pool.PoolMode = "transacshion"
+		cr.Spec.Pools["app"] = pool
+
+		By("creating PgDoorman CR with invalid poolMode")
+		err := cl.Create(ctx, cr)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("poolMode"))
 	})
 })
