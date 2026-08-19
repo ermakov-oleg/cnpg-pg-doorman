@@ -43,6 +43,9 @@ spec:
             - --client-cert=/client/tls.crt
             - --server-address=:9090
             - --leader-elect
+            # cnpg-i-machinery defaults --debug to TRUE: development zap config
+            # (console encoding, debug level) in production otherwise.
+            - --debug=false
           ports:
             - containerPort: 9090
               protocol: TCP

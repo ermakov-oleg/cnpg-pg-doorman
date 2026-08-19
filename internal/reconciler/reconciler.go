@@ -2,12 +2,12 @@ package reconciler
 
 import (
 	"context"
-	"log/slog"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/decoder"
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/object"
 	"github.com/cloudnative-pg/cnpg-i/pkg/reconciler"
+	"github.com/cloudnative-pg/machinery/pkg/log"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
@@ -42,8 +42,6 @@ func (r Implementation) Pre(
 	ctx context.Context,
 	request *reconciler.ReconcilerHooksRequest,
 ) (*reconciler.ReconcilerHooksResult, error) {
-	slog.Info("Pre hook reconciliation start")
-
 	kind, err := object.GetKind(request.GetResourceDefinition())
 	if err != nil {
 		return nil, err
@@ -59,15 +57,18 @@ func (r Implementation) Pre(
 		return nil, err
 	}
 
+	logger := log.FromContext(ctx).WithValues("cluster", cluster.Name, "namespace", cluster.Namespace)
+
 	pluginConfig := config.NewFromCluster(&cluster)
 	if !pluginConfig.Enabled {
-		slog.Info("pg-doorman plugin not enabled, skipping RBAC reconciliation")
+		logger.Debug("pg-doorman plugin not enabled, skipping RBAC reconciliation")
 		return &reconciler.ReconcilerHooksResult{
 			Behavior: reconciler.ReconcilerHooksResult_BEHAVIOR_CONTINUE,
 		}, nil
 	}
 	if err := pluginConfig.Validate(); err != nil {
-		slog.Info("plugin config invalid, blocking reconciliation", "error", err)
+		// Blocks the whole cluster reconciliation: must be visible at level=error.
+		logger.Error(err, "plugin config invalid, blocking reconciliation")
 		return nil, err
 	}
 
@@ -78,8 +79,9 @@ func (r Implementation) Pre(
 		Name:      pluginConfig.ConfigName,
 	}, &pgDoorman); err != nil {
 		if apierrs.IsNotFound(err) {
-			slog.Info("PgDoorman CR not found, requeuing",
-				"name", pluginConfig.ConfigName, "namespace", cluster.Namespace)
+			// Blocks the whole cluster reconciliation until the CR appears.
+			logger.Warning("PgDoorman CR not found, requeuing cluster reconciliation",
+				"configName", pluginConfig.ConfigName)
 			return &reconciler.ReconcilerHooksResult{
 				Behavior: reconciler.ReconcilerHooksResult_BEHAVIOR_REQUEUE,
 			}, nil
@@ -94,7 +96,7 @@ func (r Implementation) Pre(
 		return nil, err
 	}
 
-	slog.Info("Pre hook reconciliation completed")
+	logger.Debug("Pre hook reconciliation completed")
 	return &reconciler.ReconcilerHooksResult{
 		Behavior: reconciler.ReconcilerHooksResult_BEHAVIOR_CONTINUE,
 	}, nil
@@ -126,7 +128,7 @@ func (r Implementation) ensureRole(
 			return err
 		}
 
-		slog.Info("Creating role", "name", newRole.Name, "namespace", newRole.Namespace)
+		log.FromContext(ctx).Info("Creating role", "name", newRole.Name, "namespace", newRole.Namespace)
 		if err := ctrl.SetControllerReference(cluster, newRole, r.Client.Scheme()); err != nil {
 			return err
 		}
@@ -137,7 +139,7 @@ func (r Implementation) ensureRole(
 		return nil
 	}
 
-	slog.Info("Patching role", "name", newRole.Name, "namespace", newRole.Namespace)
+	log.FromContext(ctx).Info("Patching role", "name", newRole.Name, "namespace", newRole.Namespace)
 	patch := client.MergeFrom(role.DeepCopy())
 	role.Rules = newRole.Rules
 	return r.Client.Patch(ctx, &role, patch)
@@ -166,7 +168,7 @@ func (r Implementation) ensureRoleBinding(
 
 	// RoleRef is immutable — if it changed, delete and recreate
 	if !equality.Semantic.DeepEqual(roleBinding.RoleRef, newRoleBinding.RoleRef) {
-		slog.Info("RoleRef changed, recreating RoleBinding", "name", roleBinding.Name)
+		log.FromContext(ctx).Info("RoleRef changed, recreating RoleBinding", "name", roleBinding.Name)
 		if err := r.Client.Delete(ctx, &roleBinding); err != nil {
 			return err
 		}
@@ -178,7 +180,7 @@ func (r Implementation) ensureRoleBinding(
 
 	// Update subjects if they changed
 	if !equality.Semantic.DeepEqual(roleBinding.Subjects, newRoleBinding.Subjects) {
-		slog.Info("Patching RoleBinding subjects", "name", roleBinding.Name)
+		log.FromContext(ctx).Info("Patching RoleBinding subjects", "name", roleBinding.Name)
 		patch := client.MergeFrom(roleBinding.DeepCopy())
 		roleBinding.Subjects = newRoleBinding.Subjects
 		return r.Client.Patch(ctx, &roleBinding, patch)
