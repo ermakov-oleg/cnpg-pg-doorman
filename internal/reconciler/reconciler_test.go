@@ -104,19 +104,6 @@ func pgDoormanWithSecret(secretName string) *v1alpha1.PgDoorman {
 	}
 }
 
-func secretResourceNames(t *testing.T, role *rbacv1.Role) []string {
-	t.Helper()
-	for _, rule := range role.Rules {
-		for _, res := range rule.Resources {
-			if res == "secrets" {
-				return rule.ResourceNames
-			}
-		}
-	}
-	t.Fatalf("no secrets rule found in role rules: %+v", role.Rules)
-	return nil
-}
-
 func TestPreRequeuesWhenPgDoormanMissing(t *testing.T) {
 	t.Setenv("SIDECAR_IMAGE", "wrapper:test")
 	r := newImplementation(t)
@@ -146,15 +133,29 @@ func TestPreContinuesForNonClusterKind(t *testing.T) {
 	}
 }
 
-func TestPreCreatesRBACAndServiceIdempotently(t *testing.T) {
+func TestPreEnsuresServiceAndRemovesLegacyRBAC(t *testing.T) {
 	t.Setenv("SIDECAR_IMAGE", "wrapper:test")
 	r := newImplementation(t, pgDoormanWithSecret("app-secret"))
 	ctx := context.Background()
 	request := clusterRequest(t, clusterWithPlugin())
 
+	// Pre-create legacy RBAC as if left over from the pre-rendered-config era.
+	legacyRole := &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{
+		Namespace: testNamespace, Name: specs.GetRBACName(testCluster),
+	}}
+	legacyBinding := &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{
+		Namespace: testNamespace, Name: specs.GetRBACName(testCluster),
+	}}
+	if err := r.Client.Create(ctx, legacyRole); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Client.Create(ctx, legacyBinding); err != nil {
+		t.Fatal(err)
+	}
+
 	result, err := r.Pre(ctx, request)
 	if err != nil {
-		t.Fatalf("first Pre returned error: %v", err)
+		t.Fatalf("Pre returned error: %v", err)
 	}
 	if result.Behavior != reconciler.ReconcilerHooksResult_BEHAVIOR_CONTINUE {
 		t.Fatalf("behavior = %v, want BEHAVIOR_CONTINUE", result.Behavior)
@@ -163,20 +164,14 @@ func TestPreCreatesRBACAndServiceIdempotently(t *testing.T) {
 	rbacKey := client.ObjectKey{Namespace: testNamespace, Name: specs.GetRBACName(testCluster)}
 	svcKey := client.ObjectKey{Namespace: testNamespace, Name: specs.GetServiceName(testCluster)}
 
+	// Pods get zero RBAC now: legacy Role/RoleBinding must be gone.
 	var role rbacv1.Role
-	if err := r.Client.Get(ctx, rbacKey, &role); err != nil {
-		t.Fatalf("role not created: %v", err)
+	if err := r.Client.Get(ctx, rbacKey, &role); !apierrs.IsNotFound(err) {
+		t.Errorf("legacy role must be deleted, got err=%v", err)
 	}
-	if names := secretResourceNames(t, &role); len(names) != 1 || names[0] != "app-secret" {
-		t.Errorf("role secrets resourceNames = %v, want [app-secret]", names)
-	}
-
 	var roleBinding rbacv1.RoleBinding
-	if err := r.Client.Get(ctx, rbacKey, &roleBinding); err != nil {
-		t.Fatalf("rolebinding not created: %v", err)
-	}
-	if roleBinding.RoleRef.Name != specs.GetRBACName(testCluster) {
-		t.Errorf("rolebinding roleRef = %q, want %q", roleBinding.RoleRef.Name, specs.GetRBACName(testCluster))
+	if err := r.Client.Get(ctx, rbacKey, &roleBinding); !apierrs.IsNotFound(err) {
+		t.Errorf("legacy rolebinding must be deleted, got err=%v", err)
 	}
 
 	var svc corev1.Service
@@ -187,87 +182,16 @@ func TestPreCreatesRBACAndServiceIdempotently(t *testing.T) {
 		t.Errorf("service ports = %+v, want single port targeting 6432", svc.Spec.Ports)
 	}
 
-	// Second Pre must succeed without touching the objects.
+	// Second Pre must succeed without touching the Service.
 	if _, err := r.Pre(ctx, request); err != nil {
 		t.Fatalf("second Pre returned error: %v", err)
 	}
-
-	var role2 rbacv1.Role
-	var roleBinding2 rbacv1.RoleBinding
 	var svc2 corev1.Service
-	if err := r.Client.Get(ctx, rbacKey, &role2); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.Client.Get(ctx, rbacKey, &roleBinding2); err != nil {
-		t.Fatal(err)
-	}
 	if err := r.Client.Get(ctx, svcKey, &svc2); err != nil {
 		t.Fatal(err)
 	}
-	if role2.ResourceVersion != role.ResourceVersion {
-		t.Errorf("role resourceVersion changed on idempotent Pre: %s -> %s", role.ResourceVersion, role2.ResourceVersion)
-	}
-	if roleBinding2.ResourceVersion != roleBinding.ResourceVersion {
-		t.Errorf("rolebinding resourceVersion changed on idempotent Pre: %s -> %s",
-			roleBinding.ResourceVersion, roleBinding2.ResourceVersion)
-	}
 	if svc2.ResourceVersion != svc.ResourceVersion {
 		t.Errorf("service resourceVersion changed on idempotent Pre: %s -> %s", svc.ResourceVersion, svc2.ResourceVersion)
-	}
-}
-
-func TestEnsureRoleUpdatesRulesWhenSecretRefsChange(t *testing.T) {
-	r := newImplementation(t)
-	ctx := context.Background()
-	cluster := clusterWithPlugin()
-
-	if err := r.ensureRole(ctx, cluster, pgDoormanWithSecret("secret-a")); err != nil {
-		t.Fatalf("first ensureRole: %v", err)
-	}
-	if err := r.ensureRole(ctx, cluster, pgDoormanWithSecret("secret-b")); err != nil {
-		t.Fatalf("second ensureRole: %v", err)
-	}
-
-	var role rbacv1.Role
-	key := client.ObjectKey{Namespace: testNamespace, Name: specs.GetRBACName(testCluster)}
-	if err := r.Client.Get(ctx, key, &role); err != nil {
-		t.Fatal(err)
-	}
-	if names := secretResourceNames(t, &role); len(names) != 1 || names[0] != "secret-b" {
-		t.Errorf("role secrets resourceNames = %v, want [secret-b]", names)
-	}
-}
-
-func TestEnsureRoleBindingRecreatedWhenRoleRefDiffers(t *testing.T) {
-	staleBinding := &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: testNamespace,
-			Name:      specs.GetRBACName(testCluster),
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
-			Name:     "legacy-role",
-		},
-	}
-	r := newImplementation(t, staleBinding)
-	ctx := context.Background()
-
-	if err := r.ensureRoleBinding(ctx, clusterWithPlugin()); err != nil {
-		t.Fatalf("ensureRoleBinding: %v", err)
-	}
-
-	var roleBinding rbacv1.RoleBinding
-	key := client.ObjectKey{Namespace: testNamespace, Name: specs.GetRBACName(testCluster)}
-	if err := r.Client.Get(ctx, key, &roleBinding); err != nil {
-		t.Fatal(err)
-	}
-	if roleBinding.RoleRef.Name != specs.GetRBACName(testCluster) {
-		t.Errorf("roleRef = %q, want %q (RoleBinding must be recreated)",
-			roleBinding.RoleRef.Name, specs.GetRBACName(testCluster))
-	}
-	if len(roleBinding.Subjects) != 1 || roleBinding.Subjects[0].Name != testCluster {
-		t.Errorf("subjects = %+v, want the cluster ServiceAccount %q", roleBinding.Subjects, testCluster)
 	}
 }
 

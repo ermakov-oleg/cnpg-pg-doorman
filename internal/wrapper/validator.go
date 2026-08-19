@@ -214,7 +214,8 @@ func validateAuthQuery(name string, aq *AuthQueryConfig) error {
 // AtomicWrite writes data via temp file + fsync + rename.
 func AtomicWrite(path string, data []byte) error {
 	tmp := path + ".tmp"
-	f, err := os.Create(tmp) //nolint:gosec // path is derived from our own constant
+	// 0600: the config carries plaintext passwords.
+	f, err := os.OpenFile(tmp, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600) //nolint:gosec // path is derived from our own constant
 	if err != nil {
 		return err
 	}

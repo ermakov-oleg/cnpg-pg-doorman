@@ -382,3 +382,17 @@ pools:
 		t.Fatal("expected error for invalid auth_query.cache_ttl")
 	}
 }
+
+func TestAtomicWriteMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cfg.yaml")
+	if err := AtomicWrite(path, []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("config file mode = %o, want 600 (plaintext passwords inside)", info.Mode().Perm())
+	}
+}

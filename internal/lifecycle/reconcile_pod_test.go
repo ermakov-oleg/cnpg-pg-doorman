@@ -106,8 +106,8 @@ func TestInjectSidecarIdempotent(t *testing.T) {
 	if got := len(spec.InitContainers); got != 1 {
 		t.Errorf("expected 1 init container after double injection, got %d", got)
 	}
-	if got := len(spec.Volumes); got != 3 {
-		t.Errorf("expected 3 volumes (scratch+tls+podinfo) after double injection, got %d", got)
+	if got := len(spec.Volumes); got != 4 {
+		t.Errorf("expected 4 volumes (scratch+tls+config+podinfo) after double injection, got %d", got)
 	}
 }
 
@@ -247,4 +247,21 @@ func TestInjectSidecarLogLevelEnv(t *testing.T) {
 		}
 	}
 	t.Error("LOG_LEVEL env var missing on the sidecar")
+}
+
+func TestInjectSidecarScratchIsTmpfs(t *testing.T) {
+	// The working config copy carries plaintext passwords: the scratch volume
+	// must be memory-backed, never the node disk.
+	spec := &corev1.PodSpec{}
+	injectSidecar(spec, testPluginConfig(), testCluster())
+
+	for _, v := range spec.Volumes {
+		if v.Name == scratchVolumeName {
+			if v.EmptyDir == nil || v.EmptyDir.Medium != corev1.StorageMediumMemory {
+				t.Errorf("scratch volume must be tmpfs (Medium=Memory), got %+v", v.VolumeSource)
+			}
+			return
+		}
+	}
+	t.Fatal("scratch volume not found")
 }
