@@ -55,17 +55,12 @@ spec:
               general:
                 description: General settings for pg_doorman.
                 properties:
-                  adminPassword:
-                    description: |-
-                      AdminPassword is the admin password. Ignored if AdminPasswordSecretRef
-                      is set. When neither is set, the wrapper generates a random per-pod
-                      password: a fixed default would expose the admin console to the whole
-                      cluster network.
-                    type: string
                   adminPasswordSecretRef:
                     description: |-
                       AdminPasswordSecretRef references a Secret containing the admin password.
-                      Takes precedence over AdminPassword.
+                      There is deliberately no plaintext alternative: a password in the CR
+                      would land in etcd, GitOps repos and manifest backups. When unset, the
+                      wrapper generates a random per-pod password.
                     properties:
                       key:
                         description: The key to select

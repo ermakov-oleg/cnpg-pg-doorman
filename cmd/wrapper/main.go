@@ -200,7 +200,7 @@ func makeConfigGenerator(
 				return nil, err
 			}
 		}
-		passwords = configgen.EnsureAdminPassword(spec, passwords, fallbackAdminPassword)
+		passwords = configgen.EnsureAdminPassword(passwords, fallbackAdminPassword)
 		return configgen.Generate(spec, poolerPort, metricsPort, passwords, tlsFiles)
 	}, nil
 }

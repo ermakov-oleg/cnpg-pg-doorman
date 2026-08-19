@@ -12,6 +12,7 @@ import (
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -26,13 +27,23 @@ import (
 )
 
 // createClusterAndWait creates a PgDoorman CR + Cluster and waits for readiness.
+// ensureAdminPasswordSecret creates the per-namespace admin password Secret
+// referenced by every fixture CR (idempotent).
+func ensureAdminPasswordSecret(ctx SpecContext, cl client.Client, namespace string) {
+	err := cl.Create(ctx, newAdminPasswordSecret(namespace))
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		Expect(err).NotTo(HaveOccurred())
+	}
+}
+
 func createClusterAndWait(
 	ctx SpecContext,
 	cl client.Client,
 	ns *corev1.Namespace,
 	clusterName, configName string,
 ) {
-	By("creating PgDoorman CR")
+	By("creating admin password Secret and PgDoorman CR")
+	ensureAdminPasswordSecret(ctx, cl, ns.Name)
 	Expect(cl.Create(ctx, newPgDoorman(ns.Name, configName))).To(Succeed())
 
 	By("creating Cluster")
@@ -594,7 +605,8 @@ var _ = Describe("pg_doorman pooler", func() {
 		configName := "cr-failover"
 		clusterName := "test-failover"
 
-		By("creating PgDoorman CR")
+		By("creating admin password Secret and PgDoorman CR")
+		ensureAdminPasswordSecret(ctx, cl, ns.Name)
 		Expect(cl.Create(ctx, newPgDoorman(ns.Name, configName))).To(Succeed())
 
 		By("creating 2-instance Cluster")
