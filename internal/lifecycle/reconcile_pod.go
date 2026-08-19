@@ -26,6 +26,10 @@ const (
 	wrapperHealthPort = 8081
 	tlsVolumeName     = "pg-doorman-server-tls"
 	tlsMountPath      = "/etc/pg-doorman-tls"
+	podInfoVolumeName = "pg-doorman-podinfo"
+	podInfoMountPath  = "/etc/pg-doorman-podinfo"
+	// instanceRoleLabel is the CNPG pod label carrying primary/replica.
+	instanceRoleLabel = "cnpg.io/instanceRole"
 )
 
 // serverTLSSecretName returns the cluster's server TLS secret: the CNPG
@@ -84,6 +88,24 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluste
 		},
 	})
 
+	// Expose the CNPG instance role label as a file: the wrapper watches it
+	// and drops pooler sessions when this instance is demoted.
+	ensureVolume(spec, corev1.Volume{
+		Name: podInfoVolumeName,
+		VolumeSource: corev1.VolumeSource{
+			DownwardAPI: &corev1.DownwardAPIVolumeSource{
+				Items: []corev1.DownwardAPIVolumeFile{
+					{
+						Path: "role",
+						FieldRef: &corev1.ObjectFieldSelector{
+							FieldPath: "metadata.labels['" + instanceRoleLabel + "']",
+						},
+					},
+				},
+			},
+		},
+	})
+
 	// Build sidecar container
 	sidecar := corev1.Container{
 		Name:  sidecarContainerName,
@@ -108,6 +130,7 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluste
 			{Name: "HEALTH_PORT", Value: strconv.Itoa(wrapperHealthPort)},
 			{Name: "TLS_CERT_PATH", Value: tlsMountPath + "/tls.crt"},
 			{Name: "TLS_KEY_PATH", Value: tlsMountPath + "/tls.key"},
+			{Name: "ROLE_FILE", Value: podInfoMountPath + "/role"},
 		},
 		VolumeMounts: []corev1.VolumeMount{
 			{
@@ -117,6 +140,11 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluste
 			{
 				Name:      tlsVolumeName,
 				MountPath: tlsMountPath,
+				ReadOnly:  true,
+			},
+			{
+				Name:      podInfoVolumeName,
+				MountPath: podInfoMountPath,
 				ReadOnly:  true,
 			},
 		},

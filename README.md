@@ -187,6 +187,12 @@ spec:
 
 For in-pod communication (e.g. from application sidecars), connect to `localhost:6432`.
 
+> **Failover behavior**: when an instance is demoted (failover/switchover), the
+> wrapper gracefully restarts pg_doorman on that pod to drop long-lived client
+> sessions — otherwise they would keep hitting the demoted (now read-only)
+> instance forever. Clients must implement reconnect-on-error; on reconnect the
+> Service routes them to the new primary.
+
 ## Configuration Reference
 
 ### Plugin Parameters
