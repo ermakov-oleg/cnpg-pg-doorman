@@ -18,9 +18,11 @@ type ConfigGenerator func(ctx context.Context, spec *v1alpha1.PgDoormanSpec) ([]
 // Returns empty string if no secrets are referenced.
 type SecretHashFunc func(ctx context.Context, spec *v1alpha1.PgDoormanSpec, namespace string) (string, error)
 
-// Reloader asks the running pg_doorman process to re-read its config.
+// Reloader asks the running pg_doorman process to re-read its config, or to
+// restart when the change touches fields SIGHUP cannot apply.
 type Reloader interface {
 	Reload() error
+	Restart() error
 }
 
 // CRDWatcher polls PgDoorman CR for changes and regenerates config.
@@ -121,9 +123,19 @@ func (w *CRDWatcher) check(ctx context.Context) {
 		return
 	}
 
-	if _, err := ValidateConfigBytes(data); err != nil {
+	newCfg, err := ValidateConfigBytes(data)
+	if err != nil {
 		w.logger.Error("generated config is invalid, keeping old config", "error", err)
 		return
+	}
+
+	// Capture the currently applied config before the file is replaced, to
+	// detect changes in fields SIGHUP cannot apply.
+	needsRestart := false
+	if oldData, readErr := os.ReadFile(w.runtimePath); readErr == nil {
+		if oldCfg, parseErr := ValidateConfigBytes(oldData); parseErr == nil {
+			needsRestart = NeedsProcessRestart(oldCfg, newCfg)
+		}
 	}
 
 	// Validate the candidate with the real pg_doorman binary before it ever
@@ -147,7 +159,13 @@ func (w *CRDWatcher) check(ctx context.Context) {
 		return
 	}
 
-	if err := w.process.Reload(); err != nil {
+	if needsRestart {
+		w.logger.Warn("non-reloadable config fields changed, restarting pg_doorman", "generation", gen)
+		if err := w.process.Restart(); err != nil {
+			w.logger.Error("failed to restart pg_doorman", "error", err)
+			return
+		}
+	} else if err := w.process.Reload(); err != nil {
 		w.logger.Error("failed to reload pg_doorman", "error", err)
 		return
 	}
@@ -156,7 +174,7 @@ func (w *CRDWatcher) check(ctx context.Context) {
 	if secretHashOK {
 		w.lastSecretHash = secretHash
 	}
-	w.logger.Info("config reloaded successfully", "generation", gen)
+	w.logger.Info("config reloaded successfully", "generation", gen, "restarted", needsRestart)
 }
 
 // InitialConfig holds the initial generation and secret hash from WaitForCRDConfig.
