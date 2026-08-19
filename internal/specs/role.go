@@ -24,10 +24,11 @@ func BuildRole(
 		Rules: []rbacv1.PolicyRule{},
 	}
 
-	// CRD access rule
+	// CRD access rule. Only get: the wrapper polls by name, and list/watch
+	// do not work with resourceNames-scoped RBAC anyway.
 	role.Rules = append(role.Rules, rbacv1.PolicyRule{
 		APIGroups:     []string{"pg-doorman.cnpg.io"},
-		Verbs:         []string{"get", "watch", "list"},
+		Verbs:         []string{"get"},
 		Resources:     []string{"pgdoormen"},
 		ResourceNames: []string{pgDoorman.Name},
 	})

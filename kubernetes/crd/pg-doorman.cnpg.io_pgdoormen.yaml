@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.21.0
+    controller-gen.kubebuilder.io/version: v0.19.0
   name: pgdoormen.pg-doorman.cnpg.io
 spec:
   group: pg-doorman.cnpg.io
@@ -11,10 +11,23 @@ spec:
     kind: PgDoorman
     listKind: PgDoormanList
     plural: pgdoormen
+    shortNames:
+    - pgd
     singular: pgdoorman
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.pools
+      name: Pools
+      priority: 1
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: PgDoorman is the Schema for the pgdoormans API.
@@ -44,8 +57,10 @@ spec:
                 properties:
                   adminPassword:
                     description: |-
-                      AdminPassword is the admin password (default: "change-me").
-                      Ignored if AdminPasswordSecretRef is set.
+                      AdminPassword is the admin password. Ignored if AdminPasswordSecretRef
+                      is set. When neither is set, the wrapper generates a random per-pod
+                      password: a fixed default would expose the admin console to the whole
+                      cluster network.
                     type: string
                   adminPasswordSecretRef:
                     description: |-
@@ -63,38 +78,45 @@ spec:
                     - name
                     type: object
                   adminUsername:
+                    default: admin
                     description: 'AdminUsername is the admin user (default: "admin").'
                     type: string
                   connectTimeout:
+                    default: 3s
                     description: |-
                       ConnectTimeout is the connection timeout (default: "3s").
                       A plain number is milliseconds; suffixes ms/s/m/h/d are supported.
                     pattern: ^[0-9]+(ms|s|m|h|d)?$
                     type: string
                   idleTimeout:
+                    default: 5m
                     description: |-
                       IdleTimeout is the idle connection timeout (default: "5m").
                       A plain number is milliseconds; suffixes ms/s/m/h/d are supported.
                     pattern: ^[0-9]+(ms|s|m|h|d)?$
                     type: string
                   maxConnections:
+                    default: 8192
                     description: 'MaxConnections is the maximum number of connections
                       (default: 8192).'
                     minimum: 1
                     type: integer
                   serverLifetime:
+                    default: 5m
                     description: |-
                       ServerLifetime is the server connection lifetime (default: "5m").
                       A plain number is milliseconds; suffixes ms/s/m/h/d are supported.
                     pattern: ^[0-9]+(ms|s|m|h|d)?$
                     type: string
                   shutdownTimeout:
+                    default: 10s
                     description: |-
                       ShutdownTimeout is the graceful shutdown timeout (default: "10s").
                       A plain number is milliseconds; suffixes ms/s/m/h/d are supported.
                     pattern: ^[0-9]+(ms|s|m|h|d)?$
                     type: string
                   workerThreads:
+                    default: 4
                     description: 'WorkerThreads is the number of worker threads (default:
                       4).'
                     minimum: 1
@@ -109,6 +131,7 @@ spec:
                       description: AuthQuery defines auth_query-based authentication.
                       properties:
                         database:
+                          default: postgres
                           description: 'Database is the database for auth queries
                             (default: "postgres").'
                           type: string
@@ -128,12 +151,14 @@ spec:
                           - name
                           type: object
                         poolSize:
+                          default: 2
                           description: |-
                             PoolSize is the number of executor connections running auth queries (default: 2).
                             Maps to auth_query.workers.
                           minimum: 1
                           type: integer
                         query:
+                          default: SELECT * FROM public.doorman_auth_query($1)
                           description: 'Query is the SQL query (default: "SELECT *
                             FROM public.doorman_auth_query($1)").'
                           type: string
@@ -145,12 +170,14 @@ spec:
                       - user
                       type: object
                     defaultPoolSize:
+                      default: 40
                       description: |-
                         DefaultPoolSize is the data pool size per auth_query user (default: 40).
                         Maps to auth_query.pool_size.
                       minimum: 1
                       type: integer
                     poolMode:
+                      default: transaction
                       description: 'PoolMode is the pooling mode (default: "transaction").'
                       enum:
                       - session
@@ -176,6 +203,7 @@ spec:
                             - name
                             type: object
                           poolSize:
+                            default: 20
                             description: 'PoolSize is the pool size for this user
                               (default: 20).'
                             minimum: 1
@@ -200,6 +228,7 @@ spec:
                 description: Prometheus metrics configuration.
                 properties:
                   enabled:
+                    default: true
                     description: 'Enabled controls whether Prometheus metrics are
                       enabled (default: true).'
                     type: boolean
