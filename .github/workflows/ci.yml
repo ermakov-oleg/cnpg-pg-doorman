@@ -6,6 +6,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      kubernetes_version:
+        description: "kindest/node version for the bounds e2e run (e.g. v1.29.14)"
+        required: false
+        default: ""
+      cnpg_version:
+        description: "CNPG version for the bounds e2e run (e.g. 1.24.2)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -93,6 +102,33 @@ jobs:
         with:
           name: e2e-diagnostics
           path: e2e-diagnostics/
+
+  # Manual bounds check: verifies the suite against the minimum supported
+  # K8s/CNPG versions from the README (or any other combination).
+  e2e-bounds:
+    name: E2E Bounds Check
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    if: github.event_name == 'workflow_dispatch' && (inputs.kubernetes_version != '' || inputs.cnpg_version != '')
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Install Task
+        uses: arduino/setup-task@v3.0.0
+      - name: Install KinD
+        run: |
+          KIND_VERSION=$(awk '/^  KIND_VERSION:/ {print $2}' Taskfile.yml)
+          curl -sSLo kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x kind && sudo mv kind /usr/local/bin/kind
+      - name: Run E2E tests at requested versions
+        run: |
+          ARGS=""
+          [ -n "${{ inputs.kubernetes_version }}" ] && ARGS="$ARGS E2E_KUBERNETES_VERSION=${{ inputs.kubernetes_version }}"
+          [ -n "${{ inputs.cnpg_version }}" ] && ARGS="$ARGS CNPG_VERSION=${{ inputs.cnpg_version }}"
+          task e2e $ARGS
 
   publish:
     name: Publish Testing Images
