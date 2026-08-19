@@ -3,11 +3,11 @@ package lifecycle
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/decoder"
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/object"
 	"github.com/cloudnative-pg/cnpg-i/pkg/lifecycle"
+	"github.com/cloudnative-pg/machinery/pkg/log"
 
 	"github.com/o-ermakov/cnpg-pg-doorman/internal/config"
 )
@@ -35,7 +35,7 @@ func (impl Implementation) GetCapabilities(
 }
 
 func (impl Implementation) LifecycleHook(
-	_ context.Context,
+	ctx context.Context,
 	request *lifecycle.OperatorLifecycleRequest,
 ) (*lifecycle.OperatorLifecycleResponse, error) {
 	kind, err := object.GetKind(request.GetObjectDefinition())
@@ -53,7 +53,9 @@ func (impl Implementation) LifecycleHook(
 		return &lifecycle.OperatorLifecycleResponse{}, nil
 	}
 	if err := pluginConfig.Validate(); err != nil {
-		slog.Info("plugin config invalid, blocking lifecycle", "error", err)
+		// Blocks pod creation for the cluster: must be visible at level=error.
+		log.FromContext(ctx).Error(err, "plugin config invalid, blocking lifecycle",
+			"cluster", cluster.Name, "namespace", cluster.Namespace)
 		return nil, err
 	}
 

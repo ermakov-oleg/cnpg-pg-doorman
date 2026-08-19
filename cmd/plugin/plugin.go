@@ -2,13 +2,13 @@ package plugin
 
 import (
 	"context"
-	"log/slog"
 
 	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/http"
 	"github.com/cloudnative-pg/cnpg-i/pkg/lifecycle"
 	"github.com/cloudnative-pg/cnpg-i/pkg/operator"
 	"github.com/cloudnative-pg/cnpg-i/pkg/reconciler"
+	"github.com/cloudnative-pg/machinery/pkg/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
@@ -91,6 +91,7 @@ func NewCmd() *cobra.Command {
 	// Override RunE to create a manager first (needed for k8s client in ReconcilerHooks)
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		ctx := cmd.Context()
+		logger := log.FromContext(ctx)
 
 		mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 			Scheme: scheme,
@@ -115,16 +116,16 @@ func NewCmd() *cobra.Command {
 			},
 		})
 		if err != nil {
-			slog.Error("unable to start manager", "error", err)
+			logger.Error(err, "unable to start manager")
 			return err
 		}
 
 		if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-			slog.Error("unable to set up health check", "error", err)
+			logger.Error(err, "unable to set up health check")
 			return err
 		}
 		if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-			slog.Error("unable to set up ready check", "error", err)
+			logger.Error(err, "unable to set up ready check")
 			return err
 		}
 
@@ -136,11 +137,11 @@ func NewCmd() *cobra.Command {
 			ClientCertPath: viper.GetString("client-cert"),
 			ServerAddress:  viper.GetString("server-address"),
 		}); err != nil {
-			slog.Error("unable to add CNPGI runnable", "error", err)
+			logger.Error(err, "unable to add CNPGI runnable")
 			return err
 		}
 
-		slog.Info("starting manager")
+		logger.Info("starting manager")
 		return mgr.Start(ctx)
 	}
 
