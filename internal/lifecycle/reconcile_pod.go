@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	cnpgv1 "github.com/cloudnative-pg/api/pkg/api/v1"
 	"github.com/cloudnative-pg/cnpg-i/pkg/lifecycle"
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/decoder"
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/object"
@@ -23,12 +24,23 @@ const (
 	// pg_doorman state: probing the pooler port kills the container while the
 	// wrapper legitimately waits for its config.
 	wrapperHealthPort = 8081
+	tlsVolumeName     = "pg-doorman-server-tls"
+	tlsMountPath      = "/etc/pg-doorman-tls"
 )
+
+// serverTLSSecretName returns the cluster's server TLS secret: the CNPG
+// convention <cluster>-server unless overridden in spec.certificates.
+func serverTLSSecretName(cluster *cnpgv1.Cluster) string {
+	if cluster.Spec.Certificates != nil && cluster.Spec.Certificates.ServerTLSSecret != "" {
+		return cluster.Spec.Certificates.ServerTLSSecret
+	}
+	return cluster.Name + "-server"
+}
 
 func reconcilePod(
 	request *lifecycle.OperatorLifecycleRequest,
 	cfg *config.PluginConfiguration,
-	clusterName, clusterNamespace string,
+	cluster *cnpgv1.Cluster,
 ) (*lifecycle.OperatorLifecycleResponse, error) {
 	pod, err := decoder.DecodePodJSON(request.GetObjectDefinition())
 	if err != nil {
@@ -36,7 +48,7 @@ func reconcilePod(
 	}
 
 	mutatedPod := pod.DeepCopy()
-	injectSidecar(&mutatedPod.Spec, cfg, clusterName, clusterNamespace)
+	injectSidecar(&mutatedPod.Spec, cfg, cluster)
 
 	patch, err := object.CreatePatch(mutatedPod, pod)
 	if err != nil {
@@ -48,7 +60,9 @@ func reconcilePod(
 	}, nil
 }
 
-func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, clusterName, clusterNamespace string) {
+func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluster *cnpgv1.Cluster) {
+	clusterNamespace := cluster.Namespace
+
 	// Add emptyDir scratch volume for /tmp
 	if !hasVolume(spec.Volumes, scratchVolumeName) {
 		spec.Volumes = append(spec.Volumes, corev1.Volume{
@@ -58,6 +72,17 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluste
 			},
 		})
 	}
+
+	// Mount the CNPG server certificate so pg_doorman can terminate TLS on the
+	// pooler port with the same identity clients already trust (sslrootcert).
+	ensureVolume(spec, corev1.Volume{
+		Name: tlsVolumeName,
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: serverTLSSecretName(cluster),
+			},
+		},
+	})
 
 	// Build sidecar container
 	sidecar := corev1.Container{
@@ -81,11 +106,18 @@ func injectSidecar(spec *corev1.PodSpec, cfg *config.PluginConfiguration, cluste
 			{Name: "POOLER_PORT", Value: strconv.Itoa(cfg.PoolerPort)},
 			{Name: "METRICS_PORT", Value: strconv.Itoa(cfg.MetricsPort)},
 			{Name: "HEALTH_PORT", Value: strconv.Itoa(wrapperHealthPort)},
+			{Name: "TLS_CERT_PATH", Value: tlsMountPath + "/tls.crt"},
+			{Name: "TLS_KEY_PATH", Value: tlsMountPath + "/tls.key"},
 		},
 		VolumeMounts: []corev1.VolumeMount{
 			{
 				Name:      scratchVolumeName,
 				MountPath: scratchMountPath,
+			},
+			{
+				Name:      tlsVolumeName,
+				MountPath: tlsMountPath,
+				ReadOnly:  true,
 			},
 		},
 		Resources: cfg.Resources,
@@ -135,4 +167,15 @@ func hasVolume(volumes []corev1.Volume, name string) bool {
 		}
 	}
 	return false
+}
+
+// ensureVolume adds the volume or replaces an existing one with the same name.
+func ensureVolume(spec *corev1.PodSpec, volume corev1.Volume) {
+	for i := range spec.Volumes {
+		if spec.Volumes[i].Name == volume.Name {
+			spec.Volumes[i] = volume
+			return
+		}
+	}
+	spec.Volumes = append(spec.Volumes, volume)
 }
