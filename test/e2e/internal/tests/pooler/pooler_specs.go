@@ -674,9 +674,10 @@ var _ = Describe("pg_doorman pooler", func() {
 		Expect(strings.TrimSpace(stdout)).NotTo(Equal("0"))
 	})
 
-	// Test 15: PgDoorman CR deletion — wrapper keeps last-good config,
-	// pooler keeps serving; recreating the CR resumes config updates.
-	It("should keep serving connections after PgDoorman CR deletion and resume updates after recreation", func(ctx SpecContext) {
+	// Test 15: deleting a PgDoorman referenced by a live cluster is blocked
+	// by the in-use finalizer; the pooler keeps serving; deleting the cluster
+	// releases the finalizer.
+	It("should block PgDoorman deletion while a live cluster references it", func(ctx SpecContext) {
 		configName := "cr-delete"
 		clusterName := "test-cr-delete"
 		createClusterAndWait(ctx, cl, ns, clusterName, configName)
@@ -690,14 +691,25 @@ var _ = Describe("pg_doorman pooler", func() {
 			g.Expect(stdout).To(ContainSubstring("1"))
 		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
+		By("waiting for the in-use finalizer to be set")
+		Eventually(func(g Gomega) {
+			var pgDoorman pgdoormanv1alpha1.PgDoorman
+			g.Expect(cl.Get(ctx, types.NamespacedName{Name: configName, Namespace: ns.Name}, &pgDoorman)).To(Succeed())
+			g.Expect(pgDoorman.Finalizers).To(ContainElement("pg-doorman.cnpg.io/in-use"))
+		}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+
 		By("deleting the PgDoorman CR")
 		var pgDoorman pgdoormanv1alpha1.PgDoorman
 		Expect(cl.Get(ctx, types.NamespacedName{Name: configName, Namespace: ns.Name}, &pgDoorman)).To(Succeed())
 		Expect(cl.Delete(ctx, &pgDoorman)).To(Succeed())
 
-		// The wrapper no longer reads the CR: the rendered Secret stays in
-		// place (owned by the Cluster), so the pooler keeps its last-good
-		// config with no error at all.
+		By("verifying the CR is NOT deleted while the cluster references it")
+		Consistently(func(g Gomega) {
+			var current pgdoormanv1alpha1.PgDoorman
+			g.Expect(cl.Get(ctx, types.NamespacedName{Name: configName, Namespace: ns.Name}, &current)).To(Succeed())
+			g.Expect(current.DeletionTimestamp.IsZero()).To(BeFalse())
+		}).WithTimeout(30 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
+
 		By("verifying pooler keeps serving connections with the last-good config")
 		Consistently(func(g Gomega) {
 			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
@@ -705,25 +717,14 @@ var _ = Describe("pg_doorman pooler", func() {
 			g.Expect(stdout).To(ContainSubstring("1"))
 		}).WithTimeout(15 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 
-		By("recreating the PgDoorman CR with a config change")
-		recreated := newPgDoorman(ns.Name, configName, clusterName)
-		recreated.Spec.General.WorkerThreads = ptr.To(4)
-		Expect(cl.Create(ctx, recreated)).To(Succeed())
-
-		By("waiting for wrapper to reload the config from the recreated CR")
-		Eventually(func() string {
-			return getSidecarLogs(ctx, clientset, ns.Name, podName)
-		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(
-			ContainSubstring("config reloaded successfully"),
-		)
-
-		// The workerThreads change is non-reloadable: the wrapper gracefully
-		// restarts pg_doorman, so tolerate the short restart window.
-		By("verifying pooler still works after CR recreation")
+		By("deleting the Cluster releases the finalizer and the CR goes away")
+		var cluster cnpgv1.Cluster
+		Expect(cl.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: ns.Name}, &cluster)).To(Succeed())
+		Expect(cl.Delete(ctx, &cluster)).To(Succeed())
 		Eventually(func(g Gomega) {
-			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(stdout).To(ContainSubstring("1"))
+			var current pgdoormanv1alpha1.PgDoorman
+			err := cl.Get(ctx, types.NamespacedName{Name: configName, Namespace: ns.Name}, &current)
+			g.Expect(err).To(HaveOccurred())
 		}).WithTimeout(3 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 	})
 
