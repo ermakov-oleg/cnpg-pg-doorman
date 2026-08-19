@@ -106,8 +106,8 @@ func TestInjectSidecarIdempotent(t *testing.T) {
 	if got := len(spec.InitContainers); got != 1 {
 		t.Errorf("expected 1 init container after double injection, got %d", got)
 	}
-	if got := len(spec.Volumes); got != 2 {
-		t.Errorf("expected 2 volumes (scratch+tls) after double injection, got %d", got)
+	if got := len(spec.Volumes); got != 3 {
+		t.Errorf("expected 3 volumes (scratch+tls+podinfo) after double injection, got %d", got)
 	}
 }
 
@@ -181,5 +181,35 @@ func TestInjectSidecarResourcesFromConfig(t *testing.T) {
 	}
 	if got := sidecar.Resources.Requests.Memory().String(); got != "256Mi" {
 		t.Errorf("memory request = %s, want 256Mi", got)
+	}
+}
+
+func TestInjectSidecarRoleFile(t *testing.T) {
+	spec := &corev1.PodSpec{}
+	injectSidecar(spec, testPluginConfig(), testCluster())
+
+	var found bool
+	for _, v := range spec.Volumes {
+		if v.Name == podInfoVolumeName {
+			found = true
+			if v.DownwardAPI == nil || len(v.DownwardAPI.Items) != 1 ||
+				v.DownwardAPI.Items[0].FieldRef.FieldPath != "metadata.labels['"+instanceRoleLabel+"']" {
+				t.Errorf("podinfo volume must expose the %s label, got %+v", instanceRoleLabel, v.VolumeSource)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("pod must have the podinfo downward-API volume")
+	}
+
+	sidecar := findSidecar(t, spec)
+	var roleEnv string
+	for _, e := range sidecar.Env {
+		if e.Name == "ROLE_FILE" {
+			roleEnv = e.Value
+		}
+	}
+	if roleEnv != podInfoMountPath+"/role" {
+		t.Errorf("ROLE_FILE = %q, want %q", roleEnv, podInfoMountPath+"/role")
 	}
 }

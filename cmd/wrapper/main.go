@@ -150,6 +150,12 @@ func main() {
 		}
 	}()
 
+	// Watch the instance role and drop pooler sessions on demotion
+	if roleFile := os.Getenv("ROLE_FILE"); roleFile != "" {
+		rw := wrapper.NewRoleWatcher(roleFile, proc, logger)
+		go rw.Run(ctx, pollIntervalSec)
+	}
+
 	// Watch for CRD changes
 	w := wrapper.NewCRDWatcher(cl, configName, namespace, runtimeConfig, proc, generate, secretHashFn, logger, initialCfg.Generation, initialCfg.SecretHash)
 	go w.Run(ctx, pollIntervalSec)
