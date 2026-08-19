@@ -403,11 +403,15 @@ var _ = Describe("pg_doorman pooler", func() {
 			ContainSubstring("config reloaded successfully"),
 		)
 
+		// workerThreads is non-reloadable: the wrapper restarts the pooler, so
+		// tolerate the short restart window.
 		By("verifying pooler still works after rapid updates")
 		password := getAppPassword(ctx, cl, ns.Name, clusterName)
-		stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(stdout).To(ContainSubstring("1"))
+		Eventually(func(g Gomega) {
+			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(stdout).To(ContainSubstring("1"))
+		}).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
 		By("verifying the config file inside the sidecar contains the value from the last update")
 		Eventually(func(g Gomega) {
@@ -701,10 +705,14 @@ var _ = Describe("pg_doorman pooler", func() {
 			ContainSubstring("config reloaded successfully"),
 		)
 
+		// The workerThreads change is non-reloadable: the wrapper gracefully
+		// restarts pg_doorman, so tolerate the short restart window.
 		By("verifying pooler still works after CR recreation")
-		stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(stdout).To(ContainSubstring("1"))
+		Eventually(func(g Gomega) {
+			stdout, _, err := psqlViaPooler(ctx, clientset, restConfig, ns.Name, podName, password, "app", "app", "SELECT 1")
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(stdout).To(ContainSubstring("1"))
+		}).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 	})
 
 	// Test 16: Invalid poolMode is rejected at admission by CRD enum validation.
