@@ -1,5 +1,76 @@
 # Changelog
 
+## [0.3.0](https://github.com/ermakov-oleg/cnpg-pg-doorman/compare/v0.2.0...v0.3.0) (2026-08-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* render config into per-cluster Secret - pods get zero RBAC
+* PgDoorman spec.clusterRef - source of truth for the Cluster relation
+* remove plaintext adminPassword from the API
+
+### Features
+
+* client TLS on the pooler port via CNPG server certificate ([fcc3272](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/fcc3272de48f280e7bb83ee1286df2815c173da7))
+* configurable sidecar resources via plugin parameters ([901aa23](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/901aa237e33f0d4dabcd276a2c23797ef79ee3c3))
+* configurable sidecar resources via plugin parameters ([f01f151](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/f01f1519b1eaab211c4a7dbbd8f39ccd1997bb8f))
+* create &lt;cluster&gt;-doorman-rw Service; cleanup plugin resources when disabled ([28c9f55](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/28c9f552ef0f29d3d2455b48d38c4bc09cc15eda))
+* drop pooler sessions on instance demotion ([77a791a](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/77a791a8190a06edfd0e25d93dc68ccf3dc924d0))
+* drop pooler sessions on instance demotion via downward-API role watch ([5f6fa32](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/5f6fa32d179ba4c72dcb1f96699475b75aad3487))
+* Helm chart with OCI publishing ([f41771a](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/f41771a3700791d7367b190de4bbf12de2165729))
+* Helm chart with OCI publishing ([7aa3045](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/7aa304596090b5e17cbf12692eaec61f8d2406ee))
+* managed pooler Service + cleanup of plugin resources when disabled ([6370c4e](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/6370c4e26cf6a8a4496f8794cb693b14fc46481b))
+* PgDoorman spec.clusterRef - source of truth for the Cluster relation ([3d88407](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/3d88407e2169177c685e1890b10bfb5480cdd5b9))
+* PgDoorman status conditions, render events, wrapper Prometheus metrics ([fa9cfa6](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/fa9cfa6e9e6b155b218ed5bbc0bbb21a5c79b579))
+* plugin server metrics - endpoint enabled, hooks instrumented ([90f1712](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/90f1712e457971a06b8b0a2c088cc0baf730f7bd))
+* plugin server metrics endpoint + hook duration/error instrumentation ([c358412](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/c3584126cf66d29b5517632b263238d89ef58f56))
+* remove plaintext adminPassword from the API ([16b70f0](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/16b70f01947aaf63f367144e55aa6cd277cda346))
+* render config into per-cluster Secret - pods get zero RBAC ([0cd5a20](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/0cd5a2008fb8071b4f148fef54810f8781738dc3))
+* rendering status conditions, events, wrapper metrics ([cb0d0dc](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/cb0d0dcbe3a993ab4e6aa659728257f1c1ca898d))
+* terminate client TLS on pooler port with CNPG server certificate ([114907f](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/114907fe936c3cb5920e49e085639cba1f6f65df))
+
+
+### Bug Fixes
+
+* convert TLS key to PKCS[#8](https://github.com/ermakov-oleg/cnpg-pg-doorman/issues/8) - pg_doorman rejects SEC1 EC keys from CNPG ([1b430ff](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/1b430ff2e711bdc7c1c2569d008b929d06e737c5))
+* detect CR delete+recreate via UID; reset restart backoff after long uptime ([dd87c81](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/dd87c8145e812a76dc122411c98e996403a66315))
+* detect delete+recreate of PgDoorman CR via UID; reset restart backoff after long uptime ([9e91f2d](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/9e91f2d7536e550f28edcacc07ff79b4e3cd73d9))
+* disable wrapper metrics listener on :8080; configurable log level ([f7939c4](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/f7939c43deaaf553bb60b583480a61bfbaf2993c))
+* drop pg_doorman version qualifiers from docs, keep plan.md untouched ([7c42349](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/7c42349ab5a1fb7a695512ef0ab1a2e42b2b2f44))
+* graceful shutdown - send SIGTERM to pg_doorman and wait for exit instead of SIGKILL ([804d224](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/804d2240bd0bf7138ece0d868ee2bf97e13ed98f))
+* graceful shutdown of pg_doorman on pod termination ([936e69e](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/936e69e11b0a756566f543c4292c6986c3e61c55))
+* gracefully restart pg_doorman when non-reloadable config fields change ([24bfc3c](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/24bfc3cda90af69bcdcba3d7cdd79c69d26ac1cb))
+* issue plugin TLS certs from a shared CA, verify clients by CA ([accef85](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/accef85bbf20a5f353fdee18d3240e2ad336bbba))
+* lint - avoid unchecked Close in tlskey test ([91e3ae6](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/91e3ae6e00753aff18c225a1c197dbce3c19a658))
+* map auth_query pool sizes to pg_doorman v3.11.0 keys ([da40b35](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/da40b35d4d0a7d926a996bf2ca129c83fe39f064))
+* map auth_query pool sizes to pg_doorman v3.11.0 keys (workers/pool_size) ([dfba0c7](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/dfba0c7341d6484c5b2bf41d29c97e7da30117e2))
+* missing CR no longer freezes a running cluster; in-use finalizer on PgDoorman ([bff1e86](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/bff1e86e9c3346c8a8fc76d171c6584e0b3770d2))
+* missing PgDoorman CR must not freeze a running cluster ([5b4b711](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/5b4b7114d3a7948451d25be5f6a93f54aa16f9d3))
+* module path points at a non-existent repository ([fd22cd0](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/fd22cd05d3fbfcf81c2a4f6e50e33cb1c9e8932b))
+* no :8080 listener in the PG pod; configurable log level ([45f2916](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/45f2916013502d9e59161b45d797fd632adba0ec))
+* non-reloadable config fields now restart pg_doorman instead of silently no-op ([47c2d4d](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/47c2d4d8f022d74650e48b447f511ebaac8a55a1))
+* plugin server HA - 2 replicas, RollingUpdate, PDB, anti-affinity, resources, liveness, leader election ([9aaed18](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/9aaed18ea179508fd25eeb80b536477d788a1c91))
+* plugin server is a SPOF - HA deployment with leader election ([978b7f1](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/978b7f1b5bcee9977a96c27e140a8c6423a5dca4))
+* plugin server logging - --debug=false, context logr, correct levels ([d5ad091](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/d5ad09137ec4172c50a3cec0a068eb8a56ff951b))
+* plugin server logging - disable debug default, context logr, correct levels ([a4edece](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/a4edecea38395291a71c5358becf8b4cf820cd17))
+* plugin TLS from a shared CA - client cert rotation no longer breaks handshakes ([6fb114f](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/6fb114f4efc4a4ad6d4be7e1c166fb838de54c2f))
+* random per-pod admin password instead of fixed change-me default ([e52678d](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/e52678da0cdabeb22c5a82b1c34ff5188b9f9947))
+* random per-pod admin password instead of fixed change-me default ([28e075f](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/28e075ff184b1e34b362def6a966fb11bac6a531))
+* reject pooler/metrics ports reserved by the CNPG instance pod ([5ab11a8](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/5ab11a80049d841f268ede8a781c452436df45a9))
+* reject reserved pod ports in plugin parameter validation ([96246ee](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/96246eee29917bb6419022a8bfd26339a006e260))
+* rejected config must not poison the runtime config file ([85b0e83](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/85b0e83f38238b97a80e2be60a03c0fa97b88747))
+* rename module path to the real repository github.com/ermakov-oleg/cnpg-pg-doorman ([9c9a297](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/9c9a297e4ec6305a206222e61188fbd03940cc60))
+* rename sidecar metrics port to pgd-metrics, document metrics scraping ([5b3dfaa](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/5b3dfaa4406532da88b15b2f84037b791368168e))
+* replace deprecated controller-runtime scheme.Builder ([35b2395](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/35b239539e0e6ae36176bb673494ad7cc4f0b9a1))
+* replace deprecated controller-runtime scheme.Builder with apimachinery SchemeBuilder ([d6ab338](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/d6ab3386886f0e9503bd8a9630c6d122d0fd1e51))
+* sidecar port 'metrics' collides with the CNPG postgres container ([6bd8e89](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/6bd8e89ac34c1222d04f57e3516dd99576e13a96))
+* sidecar probes - broken pooler must not gate PostgreSQL pod readiness ([be3e99f](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/be3e99f8c46a3df39936ebccf6374c89c39ef4e2))
+* sidecar probes - liveness on wrapper /healthz, drop readiness gating pod ([d0edfd7](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/d0edfd74f56bc645c382c6feb02323928dd5f2e3))
+* tmpfs scratch volume and 0600 config file - plaintext passwords off node disk ([44a9b74](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/44a9b74c978f1fa68ef5cabbc097910429fa932b))
+* validate config with pg_doorman --test-config before replacing runtime file ([7dbedfc](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/7dbedfc2ab6ff177103859ab0bb2428617183335))
+* validate PgDoorman values (kubebuilder markers, CEL rule, wrapper value checks) ([718c3b1](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/718c3b1f715e078644cc534b3af156da0015fc22))
+* validate PgDoorman values (kubebuilder markers, CEL rule, wrapper value checks) ([01451ce](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/01451ce6eab5b3331242c68eb042128eab044a63))
+
 ## [0.2.0](https://github.com/ermakov-oleg/cnpg-pg-doorman/compare/v0.1.0...v0.2.0) (2026-03-03)
 
 
