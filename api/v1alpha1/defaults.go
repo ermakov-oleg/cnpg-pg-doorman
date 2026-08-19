@@ -18,7 +18,6 @@ const (
 	DefaultServerLifetime  = "5m"
 	DefaultShutdownTimeout = "10s"
 	DefaultAdminUsername   = "admin"
-	DefaultAdminPassword   = "change-me"
 )
 
 // ApplyDefaults fills in default values for unset fields.
@@ -49,10 +48,6 @@ func ApplyDefaults(spec *PgDoormanSpec) {
 	if g.AdminUsername == "" {
 		g.AdminUsername = DefaultAdminUsername
 	}
-	if g.AdminPassword == "" && g.AdminPasswordSecretRef == nil {
-		g.AdminPassword = DefaultAdminPassword
-	}
-
 	if spec.Prometheus == nil {
 		spec.Prometheus = &PrometheusSpec{}
 	}

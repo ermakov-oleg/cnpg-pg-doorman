@@ -124,8 +124,10 @@ type GeneralSpec struct {
 	// +optional
 	AdminUsername string `json:"adminUsername,omitempty"`
 
-	// AdminPassword is the admin password (default: "change-me").
-	// Ignored if AdminPasswordSecretRef is set.
+	// AdminPassword is the admin password. Ignored if AdminPasswordSecretRef
+	// is set. When neither is set, the wrapper generates a random per-pod
+	// password: a fixed default would expose the admin console to the whole
+	// cluster network.
 	// +optional
 	AdminPassword string `json:"adminPassword,omitempty"`
 
