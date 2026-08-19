@@ -98,11 +98,24 @@ func (r Implementation) pre(
 		Name:      pluginConfig.ConfigName,
 	}, &pgDoorman); err != nil {
 		if apierrs.IsNotFound(err) {
-			// Blocks the whole cluster reconciliation until the CR appears.
-			logger.Warning("PgDoorman CR not found, requeuing cluster reconciliation",
+			// A RUNNING cluster must never be frozen by a missing CR: REQUEUE
+			// stops the whole reconcile loop (no failover, no switchover, no
+			// pod replacement). Pods keep the last rendered config.
+			if cluster.Status.CurrentPrimary != "" {
+				logger.Warning("PgDoorman CR not found for a running cluster, continuing without it",
+					"configName", pluginConfig.ConfigName)
+				return &reconciler.ReconcilerHooksResult{
+					Behavior: reconciler.ReconcilerHooksResult_BEHAVIOR_CONTINUE,
+				}, nil
+			}
+			// At creation time the config is a hard prerequisite. Explicit
+			// RequeueAfter avoids the workqueue exponential backoff climbing
+			// to ~17 minutes before the CR appears.
+			logger.Warning("PgDoorman CR not found, requeuing cluster creation",
 				"configName", pluginConfig.ConfigName)
 			return &reconciler.ReconcilerHooksResult{
-				Behavior: reconciler.ReconcilerHooksResult_BEHAVIOR_REQUEUE,
+				Behavior:     reconciler.ReconcilerHooksResult_BEHAVIOR_REQUEUE,
+				RequeueAfter: 10,
 			}, nil
 		}
 		return nil, err

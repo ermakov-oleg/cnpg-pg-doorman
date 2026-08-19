@@ -184,3 +184,49 @@ func TestReconcileSkipsForeignCluster(t *testing.T) {
 		t.Error("no secret must be rendered when the cluster uses a different CR")
 	}
 }
+
+func TestFinalizerLifecycle(t *testing.T) {
+	r := newReconciler(t, cluster(), pgDoorman(""))
+
+	// In use: finalizer is added.
+	reconcile(t, r)
+	var cr v1alpha1.PgDoorman
+	if err := r.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: crName}, &cr); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range cr.Finalizers {
+		if f == Finalizer {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("finalizer must be added while the cluster references the CR, got %v", cr.Finalizers)
+	}
+
+	// Deletion while in use: blocked (finalizer stays).
+	if err := r.Delete(context.Background(), &cr); err != nil {
+		t.Fatal(err)
+	}
+	res := reconcile(t, r)
+	if res.RequeueAfter == 0 {
+		t.Error("blocked deletion must requeue")
+	}
+	if err := r.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: crName}, &cr); err != nil {
+		t.Fatalf("CR must still exist while referenced: %v", err)
+	}
+
+	// Cluster gone: finalizer released, object deleted.
+	var c cnpgv1.Cluster
+	if err := r.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: clusterName}, &c); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Delete(context.Background(), &c); err != nil {
+		t.Fatal(err)
+	}
+	reconcile(t, r)
+	err := r.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: crName}, &cr)
+	if err == nil {
+		t.Error("CR must be deleted once the finalizer is released")
+	}
+}

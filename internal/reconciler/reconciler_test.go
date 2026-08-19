@@ -225,3 +225,36 @@ func TestPreCleansUpResourcesWhenPluginDisabled(t *testing.T) {
 		t.Errorf("service still present after cleanup, err = %v", err)
 	}
 }
+
+func TestPreContinuesWhenCRMissingOnRunningCluster(t *testing.T) {
+	// A missing CR must never freeze a RUNNING cluster: REQUEUE stops the
+	// whole reconcile (no failover, no pod replacement).
+	t.Setenv("SIDECAR_IMAGE", "wrapper:test")
+	r := newImplementation(t)
+	c := clusterWithPlugin()
+	c.Status.CurrentPrimary = testCluster + "-1"
+
+	result, err := r.Pre(context.Background(), clusterRequest(t, c))
+	if err != nil {
+		t.Fatalf("Pre returned error: %v", err)
+	}
+	if result.Behavior != reconciler.ReconcilerHooksResult_BEHAVIOR_CONTINUE {
+		t.Errorf("behavior = %v, want CONTINUE for a running cluster", result.Behavior)
+	}
+}
+
+func TestPreRequeueAfterSetOnCreation(t *testing.T) {
+	t.Setenv("SIDECAR_IMAGE", "wrapper:test")
+	r := newImplementation(t)
+
+	result, err := r.Pre(context.Background(), clusterRequest(t, clusterWithPlugin()))
+	if err != nil {
+		t.Fatalf("Pre returned error: %v", err)
+	}
+	if result.Behavior != reconciler.ReconcilerHooksResult_BEHAVIOR_REQUEUE {
+		t.Fatalf("behavior = %v, want REQUEUE at creation", result.Behavior)
+	}
+	if result.RequeueAfter == 0 {
+		t.Error("RequeueAfter must be set to avoid exponential workqueue backoff")
+	}
+}
