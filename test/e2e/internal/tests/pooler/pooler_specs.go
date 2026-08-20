@@ -203,6 +203,13 @@ var _ = Describe("pg_doorman pooler", func() {
 			}
 		}
 		Expect(found).To(BeTrue(), "pg-doorman sidecar not found in any pod")
+
+		By("verifying the rendered config Secret has no binary.json without inPlaceUpgrades")
+		var renderedSecret corev1.Secret
+		Expect(cl.Get(ctx, types.NamespacedName{
+			Name: "test-inject-doorman-config", Namespace: ns.Name,
+		}, &renderedSecret)).To(Succeed())
+		Expect(renderedSecret.Data).NotTo(HaveKey("binary.json"))
 	})
 
 	// Test 2: Connection via pooler
@@ -584,7 +591,7 @@ var _ = Describe("pg_doorman pooler", func() {
 				ContainerName: "pg-doorman",
 			},
 			nil,
-			[]string{"sh", "-c", `for p in /proc/[0-9]*/exe; do t=$(readlink "$p" 2>/dev/null); if [ "$t" = "/usr/bin/pg_doorman" ]; then kill "$(echo "$p" | cut -d/ -f3)" 2>/dev/null; fi; done`},
+			[]string{"sh", "-c", `for p in /proc/[0-9]*/exe; do t=$(readlink "$p" 2>/dev/null); if [ "$t" = "/tmp/bin/pg_doorman" ]; then kill "$(echo "$p" | cut -d/ -f3)" 2>/dev/null; fi; done`},
 		)
 		Expect(err).NotTo(HaveOccurred())
 

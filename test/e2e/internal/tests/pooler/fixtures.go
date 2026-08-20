@@ -107,6 +107,14 @@ func newClusterWithInstances(namespace, name, configName string, instances int) 
 	return c
 }
 
+// newClusterWithInPlaceUpgrades creates a Cluster that opts into in-place
+// pg_doorman binary upgrades via the inPlaceUpgrades plugin parameter.
+func newClusterWithInPlaceUpgrades(namespace, name, configName string) *cnpgv1.Cluster {
+	c := newCluster(namespace, name, configName)
+	c.Spec.Plugins[0].Parameters["inPlaceUpgrades"] = "true"
+	return c
+}
+
 // newClusterWithMissingConfig creates a Cluster referencing a non-existent PgDoorman CR.
 func newClusterWithMissingConfig(namespace, name string) *cnpgv1.Cluster {
 	return newCluster(namespace, name, "non-existent-config")

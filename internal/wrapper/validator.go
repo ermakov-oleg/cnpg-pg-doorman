@@ -24,12 +24,16 @@ const binaryTestTimeout = 10 * time.Second
 // the file extension and would parse anything else as TOML.
 const CandidateSuffix = ".next.yaml"
 
+// ValidateConfigFlag makes pg_doorman parse the config and exit. Such a run is
+// the same binary as the pooler, so the successor scan has to tell them apart.
+const ValidateConfigFlag = "--test-config"
+
 // NewBinaryConfigTester returns a ConfigTester running `binary <path> --test-config`.
 func NewBinaryConfigTester(binary string) ConfigTester {
 	return func(ctx context.Context, path string) error {
 		ctx, cancel := context.WithTimeout(ctx, binaryTestTimeout)
 		defer cancel()
-		out, err := exec.CommandContext(ctx, binary, path, "--test-config").CombinedOutput() //nolint:gosec // fixed binary, path is our candidate file
+		out, err := exec.CommandContext(ctx, binary, path, ValidateConfigFlag).CombinedOutput() //nolint:gosec // fixed binary, path is our candidate file
 		if err != nil {
 			return fmt.Errorf("pg_doorman --test-config failed: %w: %s", err, out)
 		}

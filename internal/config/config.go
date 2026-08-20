@@ -34,6 +34,8 @@ const (
 
 	DefaultLogLevel = "info"
 
+	ParamInPlaceUpgrades = "inPlaceUpgrades"
+
 	ParamSidecarCPURequest    = "sidecarCpuRequest"
 	ParamSidecarMemoryRequest = "sidecarMemoryRequest"
 	ParamSidecarCPULimit      = "sidecarCpuLimit"
@@ -50,8 +52,11 @@ type PluginConfiguration struct {
 	ConfigName   string
 	SidecarImage string
 	LogLevel     string
-	Resources    corev1.ResourceRequirements
-	ParseErrors  []string
+	// InPlaceUpgrades opts the cluster into pooler binary upgrades without a
+	// pod restart. Off unless explicitly enabled.
+	InPlaceUpgrades bool
+	Resources       corev1.ResourceRequirements
+	ParseErrors     []string
 }
 
 func NewFromCluster(cluster *cnpgv1.Cluster) *PluginConfiguration {
@@ -91,6 +96,14 @@ func NewFromCluster(cluster *cnpgv1.Cluster) *PluginConfiguration {
 		}
 		if v, ok := plugin.Parameters[ParamLogLevel]; ok {
 			cfg.LogLevel = v
+		}
+		if v, ok := plugin.Parameters[ParamInPlaceUpgrades]; ok {
+			if enabled, err := strconv.ParseBool(v); err == nil {
+				cfg.InPlaceUpgrades = enabled
+			} else {
+				cfg.ParseErrors = append(cfg.ParseErrors,
+					fmt.Sprintf("%s: invalid boolean %q", ParamInPlaceUpgrades, v))
+			}
 		}
 
 		cfg.Resources = corev1.ResourceRequirements{

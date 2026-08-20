@@ -199,6 +199,59 @@ func TestNewFromCluster_InvalidPort(t *testing.T) {
 	}
 }
 
+func TestNewFromCluster_InPlaceUpgrades(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{"true", "true", true},
+		{"false", "false", false},
+		{"numeric true", "1", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := NewFromCluster(clusterWithParams(map[string]string{ParamInPlaceUpgrades: tt.value}))
+			if cfg.InPlaceUpgrades != tt.want {
+				t.Errorf("InPlaceUpgrades = %v, want %v", cfg.InPlaceUpgrades, tt.want)
+			}
+			if len(cfg.ParseErrors) != 0 {
+				t.Errorf("unexpected parse errors: %v", cfg.ParseErrors)
+			}
+		})
+	}
+}
+
+func TestNewFromCluster_InPlaceUpgradesDefaultsOff(t *testing.T) {
+	cfg := NewFromCluster(clusterWithParams(nil))
+	if cfg.InPlaceUpgrades {
+		t.Error("in-place upgrades must be off unless explicitly enabled")
+	}
+}
+
+func TestNewFromCluster_InvalidInPlaceUpgrades(t *testing.T) {
+	cfg := NewFromCluster(clusterWithParams(map[string]string{ParamInPlaceUpgrades: "yes-please"}))
+
+	if cfg.InPlaceUpgrades {
+		t.Error("invalid value must not enable in-place upgrades")
+	}
+	cfg.SidecarImage = "wrapper:test"
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("invalid boolean must fail validation")
+	}
+	if !strings.Contains(err.Error(), "invalid boolean") {
+		t.Errorf("expected 'invalid boolean' in error, got %q", err.Error())
+	}
+}
+
+func TestSetDefaults_OmitsInPlaceUpgrades(t *testing.T) {
+	// Absent means off: no need to materialize the flag into the cluster spec.
+	if _, ok := SetDefaults(nil)[ParamInPlaceUpgrades]; ok {
+		t.Error("SetDefaults must not add inPlaceUpgrades")
+	}
+}
+
 func TestValidate_ParseErrors(t *testing.T) {
 	cfg := &PluginConfiguration{
 		Enabled:      true,

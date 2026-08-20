@@ -67,6 +67,8 @@ spec:
             # cnpg-i-machinery defaults --debug to TRUE: development zap config
             # (console encoding, debug level) in production otherwise.
             - --debug=false
+            - --binary-base-url=https://{{ include "cnpg-pg-doorman.fullname" . }}.{{ .Release.Namespace }}.svc:9091
+            - --binary-ca-file=/server/ca.crt
             {{- range .Values.additionalArgs }}
             - {{ . | quote }}
             {{- end }}
@@ -74,6 +76,9 @@ spec:
             - containerPort: 9090
               protocol: TCP
             - containerPort: 8081
+              protocol: TCP
+            - name: binary
+              containerPort: 9091
               protocol: TCP
           env:
             - name: SIDECAR_IMAGE

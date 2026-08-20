@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"syscall"
 	"time"
@@ -14,7 +16,10 @@ import (
 	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/wrapper"
 )
 
-const pollIntervalSec = 2
+const (
+	pollIntervalSec       = 2
+	binaryPollIntervalSec = 10
+)
 
 // The wrapper has no Kubernetes client: the plugin controller renders the
 // config into a per-cluster Secret, mounted into this pod. The wrapper only
@@ -24,6 +29,8 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: wrapper.ParseLogLevel(os.Getenv("LOG_LEVEL")),
 	}))
+	wrapper.SetChildSubreaper(logger)
+	wrapper.CapFileDescriptorLimit(logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
@@ -39,9 +46,20 @@ func main() {
 	proc := wrapper.NewProcess(wrapper.RuntimeConfigPath, logger)
 	fw := wrapper.NewFileWatcher(sourcePath, wrapper.RuntimeConfigPath, rawKeyPath, wrapper.ConvertedTLSKeyPath, proc, logger)
 
-	if err := fw.ApplyInitial(ctx); err != nil {
-		// The Secret volume is mounted before the container starts, so this
-		// only fails on a genuinely broken rendered config.
+	// binary.json ships in the same rendered Secret as the config.
+	specSource := filepath.Join(filepath.Dir(sourcePath), wrapper.BinarySpecKey)
+	syncer := wrapper.NewBinarySyncer(
+		specSource, wrapper.ImageBinaryPath, wrapper.RuntimeBinaryPath, runtime.GOARCH, logger)
+	appliedSpec, err := syncer.EnsureAtStartup(ctx)
+	if err != nil {
+		logger.Error("initial binary sync failed", "error", err)
+		os.Exit(1)
+	}
+
+	appliedSpec, err = wrapper.ApplyInitialConfig(ctx, fw, syncer, appliedSpec, logger)
+	if err != nil {
+		// The Secret volume is mounted before the container starts, and the
+		// image binary has already been retried: the config is genuinely broken.
 		logger.Error("initial config apply failed", "error", err)
 		os.Exit(1)
 	}
@@ -56,6 +74,11 @@ func main() {
 	}()
 
 	go fw.Run(ctx, pollIntervalSec)
+
+	// A binary change is rare and the spec file is tiny: a slow poll is enough.
+	bw := wrapper.NewBinaryWatcher(specSource, syncer, proc, logger)
+	bw.Seed(appliedSpec)
+	go bw.Run(ctx, binaryPollIntervalSec)
 
 	// Watch the instance role and drop pooler sessions on demotion
 	if roleFile := os.Getenv("ROLE_FILE"); roleFile != "" {
