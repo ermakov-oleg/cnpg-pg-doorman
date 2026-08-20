@@ -245,6 +245,7 @@ Parameters passed via `spec.plugins[].parameters` in the CNPG Cluster:
 | `sidecarCpuLimit`      | —       | Sidecar CPU limit (unset by default: a hard CPU cap throttles pooled traffic) |
 | `sidecarMemoryLimit`   | `512Mi` | Sidecar memory limit; `none` removes it |
 | `logLevel`             | `info`  | Log level of pg_doorman and the wrapper (`error`/`warn`/`info`/`debug`/`trace`) |
+| `inPlaceUpgrades`      | `false` | Upgrade the pg_doorman binary of running sidecars without a pod restart |
 
 ### PgDoorman CRD
 
