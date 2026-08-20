@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // findSuccessorPid scans /proc for the re-exec'd pg_doorman spawned by the
@@ -28,6 +29,34 @@ func findSuccessorPid(binaryPath string, excludePid int) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+// killStrays SIGKILLs every process running binaryPath except excludePid and
+// the wrapper itself, and returns the pids it killed. It backs the "exactly one
+// supervised pooler" invariant: SO_REUSEPORT lets a survivor of a failed
+// handover keep serving traffic nobody supervises, which is worse than dropping
+// its connections. SIGTERM is not enough — such a process may be mid-migration
+// and take its whole drain, while a new pooler is about to start.
+func killStrays(binaryPath string, excludePid int) []int {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	self := os.Getpid()
+	var killed []int
+	for _, e := range entries {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil || pid == excludePid || pid == self {
+			continue
+		}
+		if !runsBinary("/proc/"+e.Name(), binaryPath) {
+			continue
+		}
+		if err := syscall.Kill(pid, syscall.SIGKILL); err == nil {
+			killed = append(killed, pid)
+		}
+	}
+	return killed
 }
 
 // validateConfigShortFlag is the short form of ValidateConfigFlag; both mark a

@@ -3,11 +3,15 @@ package wrapper
 import (
 	"bytes"
 	"context"
+	"encoding/pem"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -15,6 +19,7 @@ import (
 
 type fakeUpgrader struct {
 	upgrades int
+	inFlight bool
 	err      error
 }
 
@@ -22,6 +27,8 @@ func (f *fakeUpgrader) Upgrade() error {
 	f.upgrades++
 	return f.err
 }
+
+func (f *fakeUpgrader) UpgradeInFlight() bool { return f.inFlight }
 
 func acceptingTester(_ context.Context, _ string) error { return nil }
 
@@ -174,6 +181,52 @@ func TestBinaryWatcherDownloadsValidatesAndUpgrades(t *testing.T) {
 	}
 	if _, err := os.Stat(w.runtimePath); !os.IsNotExist(err) {
 		t.Error("the second check must not act on an unchanged spec")
+	}
+}
+
+// A second spec change during a live handover must not swap argv[0] under the
+// successor that is still migrating clients.
+func TestBinaryWatcherDefersWhileUpgradeInFlight(t *testing.T) {
+	dir := t.TempDir()
+	desired := []byte("new-binary")
+	var requests atomic.Int32
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		_, _ = w.Write(desired)
+	}))
+	defer srv.Close()
+	ca := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	specPath := writeSpec(t, dir, &BinarySpec{
+		URL:      srv.URL,
+		SHA256:   map[string]string{"testarch": sha(desired)},
+		CABundle: string(ca),
+	})
+	w, up := newTestBinaryWatcher(t, dir, specPath, "old", acceptingTester)
+	up.inFlight = true
+
+	w.check(context.Background())
+
+	if got := requests.Load(); got != 0 {
+		t.Errorf("download requests = %d, want 0 while an upgrade is in flight", got)
+	}
+	if up.upgrades != 0 {
+		t.Errorf("upgrades = %d, want 0", up.upgrades)
+	}
+	if w.lastSpec != nil {
+		t.Error("lastSpec must not advance: the deferred change has to be retried on the next poll")
+	}
+
+	up.inFlight = false
+	w.check(context.Background())
+
+	if up.upgrades != 1 {
+		t.Fatalf("upgrades = %d after the handover settled, want 1", up.upgrades)
+	}
+	if got, _ := os.ReadFile(w.runtimePath); !bytes.Equal(got, desired) {
+		t.Errorf("runtime binary = %q, want %q", got, desired)
+	}
+	if w.lastSpec == nil {
+		t.Error("lastSpec must advance after the upgrade was triggered")
 	}
 }
 

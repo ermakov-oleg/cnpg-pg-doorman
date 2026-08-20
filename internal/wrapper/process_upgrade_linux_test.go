@@ -190,6 +190,92 @@ func TestUpgradeWithoutSuccessorFallsBackToRestart(t *testing.T) {
 	}
 }
 
+func TestKillStraysKillsProcessesRunningTheBinary(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "pg_doorman")
+	if err := os.WriteFile(script, []byte(noSuccessorScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PID_LOG", filepath.Join(dir, "pids"))
+
+	cmd := exec.Command(script, filepath.Join(dir, "config.yaml")) //nolint:gosec // test double
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+	pid := cmd.Process.Pid
+	waitForPidCount(t, filepath.Join(dir, "pids"), 1)
+
+	if killed := killStrays(script, pid); len(killed) != 0 {
+		t.Fatalf("killed the excluded pid: %v", killed)
+	}
+	if err := syscall.Kill(pid, 0); err != nil {
+		t.Fatalf("excluded process died: %v", err)
+	}
+
+	killed := killStrays(script, 0)
+	if len(killed) != 1 || killed[0] != pid {
+		t.Fatalf("killed = %v, want [%d]", killed, pid)
+	}
+	if err := cmd.Wait(); err == nil {
+		t.Error("expected the swept process to die from the signal")
+	}
+}
+
+// A successor the scan could not match keeps serving through the shared
+// listener: the restart path must not add a second pooler next to it.
+func TestFailedAdoptionKillsUnsupervisedSurvivor(t *testing.T) {
+	SetChildSubreaper(slog.Default())
+	p, pidLog := newUpgradeProcess(t, upgradeScript)
+	p.successorTimeout = 300 * time.Millisecond
+	// A real successor appears, but too slowly for the scan to see it.
+	p.findSuccessor = func(string, int) (int, bool) { return 0, false }
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- p.RunWithRestart(ctx) }()
+
+	waitForPidCount(t, pidLog, 1)
+	if err := p.Upgrade(); err != nil {
+		t.Fatalf("upgrade failed: %v", err)
+	}
+	waitForPidCount(t, pidLog, 2)
+	survivor := readPids(t, pidLog)[1]
+
+	assertKilled(t, survivor)
+	cancel()
+	<-done
+}
+
+// assertKilled waits until pid is gone. The survivor re-parented to the test
+// process (the subreaper), so it stays a zombie until reaped here.
+func assertKilled(t *testing.T, pid int) {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		var ws syscall.WaitStatus
+		reaped, err := syscall.Wait4(pid, &ws, syscall.WNOHANG, nil)
+		switch {
+		case reaped == pid:
+			if !ws.Signaled() || ws.Signal() != syscall.SIGKILL {
+				t.Fatalf("pid %d ended without SIGKILL: exit %d signaled %v", pid, ws.ExitStatus(), ws.Signaled())
+			}
+			return
+		case errors.Is(err, syscall.ECHILD):
+			// Not ours to reap: liveness is all that can be checked.
+			if killErr := syscall.Kill(pid, 0); errors.Is(killErr, syscall.ESRCH) {
+				return
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("pid %d was not killed", pid)
+}
+
 // waitPid falls back to liveness polling when wait4 cannot report the process
 // (ECHILD): a still-running pooler must never be reported as exited.
 func TestWaitUntilGoneReturnsOnlyAfterProcessDisappears(t *testing.T) {

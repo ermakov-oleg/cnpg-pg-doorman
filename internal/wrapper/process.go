@@ -59,8 +59,11 @@ type Process struct {
 	// ready) leaves the old process running and the flag set.
 	upgradeRequestedAt time.Time
 	successorTimeout   time.Duration
-	mu                 sync.Mutex
-	logger             *slog.Logger
+	// findSuccessor is the successor scan, indirected so tests can reproduce a
+	// handover whose successor stays invisible to the scan.
+	findSuccessor func(binaryPath string, excludePid int) (int, bool)
+	mu            sync.Mutex
+	logger        *slog.Logger
 }
 
 func NewProcess(configPath string, logger *slog.Logger) *Process {
@@ -69,6 +72,7 @@ func NewProcess(configPath string, logger *slog.Logger) *Process {
 		binary:           PgDoormanBinary,
 		waitMargin:       shutdownWaitMargin,
 		successorTimeout: successorSearchTimeout,
+		findSuccessor:    findSuccessorPid,
 		logger:           logger,
 	}
 }
@@ -281,23 +285,42 @@ func (p *Process) Upgrade() error {
 	return nil
 }
 
+// upgradeRequestFreshLocked reports whether a pending upgrade request can still
+// explain an exit. A request older than the whole handover window (drain plus
+// successor search) is stale: pg_doorman aborted the upgrade and kept running.
+// Callers hold p.mu.
+func (p *Process) upgradeRequestFreshLocked() (fresh bool, age time.Duration) {
+	if !p.upgradeRequested {
+		return false, 0
+	}
+	age = time.Since(p.upgradeRequestedAt)
+	return age <= p.waitDelay()+p.successorTimeout, age
+}
+
 // consumeUpgradeRequest reports whether the exit just observed can be a binary
-// upgrade handover. A request older than the whole handover window (drain plus
-// successor search) is dropped: pg_doorman aborted the upgrade and kept
-// running, so this exit is a genuine one and must not burn a successor search.
+// upgrade handover. A stale request is dropped: this exit is a genuine one and
+// must not burn a successor search.
 func (p *Process) consumeUpgradeRequest() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	requested := p.upgradeRequested
+	fresh, age := p.upgradeRequestFreshLocked()
 	p.upgradeRequested = false
-	if !requested {
-		return false
-	}
-	if age := time.Since(p.upgradeRequestedAt); age > p.waitDelay()+p.successorTimeout {
+	if requested && !fresh {
 		p.logger.Warn("ignoring stale binary upgrade request", "age", age)
-		return false
 	}
-	return true
+	return fresh
+}
+
+// UpgradeInFlight reports whether a handover triggered by Upgrade is still
+// expected to complete. The BinaryWatcher defers a second binary swap while it
+// is true: replacing argv[0] and re-signaling mid-migration would leave the
+// successor executing a binary nobody validated against the live config.
+func (p *Process) UpgradeInFlight() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	fresh, _ := p.upgradeRequestFreshLocked()
+	return fresh
 }
 
 // adoptSuccessor looks for the re-exec'd pg_doorman for a few seconds after
@@ -305,7 +328,7 @@ func (p *Process) consumeUpgradeRequest() bool {
 func (p *Process) adoptSuccessor(ctx context.Context, oldPid int) bool {
 	deadline := time.Now().Add(p.successorTimeout)
 	for {
-		if pid, ok := findSuccessorPid(p.binary, oldPid); ok {
+		if pid, ok := p.findSuccessor(p.binary, oldPid); ok {
 			p.mu.Lock()
 			p.cmd = nil
 			p.adoptedPid = pid
@@ -321,6 +344,16 @@ func (p *Process) adoptSuccessor(ctx context.Context, oldPid int) bool {
 			return false
 		case <-time.After(successorPollInterval):
 		}
+	}
+}
+
+// sweepStrays kills poolers left over from a handover the supervisor could not
+// adopt. It runs before the restart path starts a new one: a survivor the scan
+// missed would keep accepting connections through the shared listener with
+// nobody watching it.
+func (p *Process) sweepStrays() {
+	for _, pid := range killStrays(p.binary, 0) {
+		p.logger.Error("killing unsupervised pg_doorman survivor", "pid", pid)
 	}
 }
 
@@ -400,6 +433,7 @@ func (p *Process) RunWithRestart(ctx context.Context) error {
 				}
 				BinaryUpgradesTotal.WithLabelValues("failure").Inc()
 				p.logger.Error("binary upgrade handover failed: successor not found, restarting pg_doorman")
+				p.sweepStrays()
 			}
 
 			uptime := time.Since(startedAt)
