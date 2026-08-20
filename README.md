@@ -318,7 +318,9 @@ The plugin consists of two components:
 
 ## In-place pg_doorman upgrades
 
-The plugin image carries the pg_doorman binaries for every supported architecture. When the plugin is upgraded to a release that pins a newer pg_doorman, running sidecars pick up the new binary without a pod or container restart:
+This feature is opt-in per cluster via the plugin parameter `inPlaceUpgrades: "true"` (default: off). Without it, the sidecar always runs the pg_doorman binary baked into its image, and the plugin never publishes `binary.json` for that cluster.
+
+The plugin image carries the pg_doorman binaries for every supported architecture. When the plugin is upgraded to a release that pins a newer pg_doorman, running sidecars of clusters with `inPlaceUpgrades: "true"` pick up the new binary without a pod or container restart:
 
 1. The leader-elected plugin controller publishes `binary.json` (per-arch download URL, sha256 digests, and the CA bundle for the delivery endpoint) into the same rendered `<cluster>-doorman-config` Secret used for pooler config.
 2. The wrapper polls the mounted `binary.json`. On a digest change it downloads the binary for its architecture from the plugin's binary delivery endpoint, verifying the sha256.
@@ -330,6 +332,8 @@ This requires the plugin's binary delivery endpoint (port `9091`, served by ever
 The rendered config Secret is the trust root of this flow: the download URL, the per-arch sha256 digests, and the CA bundle the sidecar verifies the endpoint against all come from it, so a principal able to write Secrets in a cluster's namespace can point the sidecar at an arbitrary binary and have it executed — restrict write access to Secrets in those namespaces accordingly.
 
 Wrapper metrics for this flow: `pg_doorman_wrapper_binary_upgrades_total{result}` (handover outcomes) and `pg_doorman_wrapper_binary_stale` (1 while the installed binary does not yet match `binary.json`).
+
+Turning `inPlaceUpgrades` off stops future upgrades but does not roll back an already-upgraded running binary: that only happens on the next pod or container restart, when the wrapper's startup sync finds no `binary.json` and installs the binary baked into the image instead.
 
 ### Client-facing caveats
 

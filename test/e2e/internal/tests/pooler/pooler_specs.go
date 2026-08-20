@@ -203,6 +203,13 @@ var _ = Describe("pg_doorman pooler", func() {
 			}
 		}
 		Expect(found).To(BeTrue(), "pg-doorman sidecar not found in any pod")
+
+		By("verifying the rendered config Secret has no binary.json without inPlaceUpgrades")
+		var renderedSecret corev1.Secret
+		Expect(cl.Get(ctx, types.NamespacedName{
+			Name: "test-inject-doorman-config", Namespace: ns.Name,
+		}, &renderedSecret)).To(Succeed())
+		Expect(renderedSecret.Data).NotTo(HaveKey("binary.json"))
 	})
 
 	// Test 2: Connection via pooler

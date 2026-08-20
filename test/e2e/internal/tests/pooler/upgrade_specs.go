@@ -189,7 +189,22 @@ var _ = Describe("in-place binary upgrade", Ordered, Serial, func() {
 		ns, err = namespace.CreateUniqueNamespace(ctx, cl, "upgrade")
 		Expect(err).NotTo(HaveOccurred())
 
-		createClusterAndWait(ctx, cl, ns, clusterName, configName)
+		By("creating admin password Secret and PgDoorman CR")
+		ensureAdminPasswordSecret(ctx, cl, ns.Name, clusterName)
+		Expect(cl.Create(ctx, newPgDoorman(ns.Name, configName, clusterName))).To(Succeed())
+
+		By("creating Cluster opted into in-place upgrades")
+		Expect(cl.Create(ctx, newClusterWithInPlaceUpgrades(ns.Name, clusterName, configName))).To(Succeed())
+
+		By("waiting for cluster to be ready")
+		Eventually(func(g Gomega) {
+			var current cnpgv1.Cluster
+			g.Expect(cl.Get(ctx, types.NamespacedName{
+				Name: clusterName, Namespace: ns.Name,
+			}, &current)).To(Succeed())
+			g.Expect(cluster.IsReady(current)).To(BeTrue())
+		}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+
 		podName = getPodName(ctx, cl, ns.Name, clusterName)
 		password = getAppPassword(ctx, cl, ns.Name, clusterName)
 
