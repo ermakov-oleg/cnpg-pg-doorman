@@ -133,7 +133,7 @@ func (r *RenderedConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: requeueAfter}, nil
 	}
 
-	if err := r.upsertSecret(ctx, &cluster, data, generatedAdmin); err != nil {
+	if err := r.upsertSecret(ctx, &cluster, data, generatedAdmin, cfg.InPlaceUpgrades); err != nil {
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, r.setRendered(ctx, &pgDoorman, true, "Rendered",
@@ -302,6 +302,7 @@ func (r *RenderedConfigReconciler) upsertSecret(
 	cluster *cnpgv1.Cluster,
 	data []byte,
 	generatedAdmin string,
+	inPlaceUpgrades bool,
 ) error {
 	logger := log.FromContext(ctx)
 
@@ -319,7 +320,7 @@ func (r *RenderedConfigReconciler) upsertSecret(
 		},
 	}
 
-	binaryJSON, err := r.binarySpecJSON()
+	binaryJSON, err := r.binarySpecJSON(inPlaceUpgrades)
 	if err != nil {
 		return err
 	}
@@ -355,8 +356,11 @@ func (r *RenderedConfigReconciler) upsertSecret(
 	return r.Patch(ctx, &existing, patch)
 }
 
-func (r *RenderedConfigReconciler) binarySpecJSON() ([]byte, error) {
-	if r.Binary == nil {
+// binarySpecJSON marshals the desired binary spec, or returns nil when the
+// cluster has not opted into in-place upgrades: the key then disappears from
+// the Secret and wrappers keep the binary baked into their image.
+func (r *RenderedConfigReconciler) binarySpecJSON(inPlaceUpgrades bool) ([]byte, error) {
+	if r.Binary == nil || !inPlaceUpgrades {
 		return nil, nil
 	}
 	return json.Marshal(r.Binary)

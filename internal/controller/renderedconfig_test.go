@@ -49,6 +49,12 @@ func cluster() *cnpgv1.Cluster {
 	}
 }
 
+func clusterWithInPlaceUpgrades(value string) *cnpgv1.Cluster {
+	c := cluster()
+	c.Spec.Plugins[0].Parameters["inPlaceUpgrades"] = value
+	return c
+}
+
 func pgDoorman(secretName string) *v1alpha1.PgDoorman {
 	cr := &v1alpha1.PgDoorman{
 		ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: ns},
@@ -140,13 +146,17 @@ func TestReconcileRendersConfigSecret(t *testing.T) {
 	}
 }
 
-func TestUpsertSecretPublishesBinarySpec(t *testing.T) {
-	binary := &wrapper.BinarySpec{
+func binarySpec() *wrapper.BinarySpec {
+	return &wrapper.BinarySpec{
 		URL:      "https://pg-doorman.cnpg-system.svc:9091",
 		SHA256:   map[string]string{"amd64": "aa"},
 		CABundle: "PEM",
 	}
-	r := newReconcilerWithBinary(t, binary, cluster(), pgDoorman(""))
+}
+
+func TestUpsertSecretPublishesBinarySpec(t *testing.T) {
+	binary := binarySpec()
+	r := newReconcilerWithBinary(t, binary, clusterWithInPlaceUpgrades("true"), pgDoorman(""))
 
 	reconcile(t, r)
 
@@ -179,6 +189,43 @@ func TestUpsertSecretOmitsBinarySpecWhenDisabled(t *testing.T) {
 	if _, ok := secret.Data[wrapper.BinarySpecKey]; ok {
 		t.Errorf("rendered secret must not carry %q when Binary is disabled, got keys %v",
 			wrapper.BinarySpecKey, secret.Data)
+	}
+}
+
+func TestUpsertSecretOmitsBinarySpecWhenNotOptedIn(t *testing.T) {
+	// In-place upgrades are opt-in per cluster: a configured Binary alone must
+	// not reach the wrappers.
+	r := newReconcilerWithBinary(t, binarySpec(), cluster(), pgDoorman(""))
+
+	reconcile(t, r)
+
+	secret := renderedSecret(t, r)
+	if _, ok := secret.Data[wrapper.BinarySpecKey]; ok {
+		t.Errorf("rendered secret must not carry %q without inPlaceUpgrades=true, got keys %v",
+			wrapper.BinarySpecKey, secret.Data)
+	}
+}
+
+func TestUpsertSecretDropsBinarySpecOnOptOut(t *testing.T) {
+	r := newReconcilerWithBinary(t, binarySpec(), clusterWithInPlaceUpgrades("true"), pgDoorman(""))
+
+	reconcile(t, r)
+	if _, ok := renderedSecret(t, r).Data[wrapper.BinarySpecKey]; !ok {
+		t.Fatalf("rendered secret must carry %q while opted in", wrapper.BinarySpecKey)
+	}
+
+	var c cnpgv1.Cluster
+	if err := r.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: clusterName}, &c); err != nil {
+		t.Fatal(err)
+	}
+	delete(c.Spec.Plugins[0].Parameters, "inPlaceUpgrades")
+	if err := r.Update(context.Background(), &c); err != nil {
+		t.Fatal(err)
+	}
+
+	reconcile(t, r)
+	if _, ok := renderedSecret(t, r).Data[wrapper.BinarySpecKey]; ok {
+		t.Errorf("rendered secret must drop the stale %q after opting out", wrapper.BinarySpecKey)
 	}
 }
 
