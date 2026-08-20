@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.4.0](https://github.com/ermakov-oleg/cnpg-pg-doorman/compare/v0.3.0...v0.4.0) (2026-08-20)
+
+
+### Features
+
+* binaries manifest and HTTPS delivery server ([2460ec2](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/2460ec264756ad3b3fcf989475e3939f02edaef6))
+* binary spec contract and runtime binary paths ([899a48a](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/899a48a01bb7c2950199e2eab152a6e5e61a76cf))
+* in-place pg_doorman binary upgrade (SIGUSR2 supervision) ([b3fd914](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/b3fd914f77d667d2bcb8f860b41433f9b5868b50))
+* in-place upgrades are opt-in per cluster via inPlaceUpgrades parameter ([20d69c7](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/20d69c748df239e45cafa0a0b04063c6024488a3))
+* live in-place binary upgrade on binary spec change ([c64fc47](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/c64fc4787df98585022fa2664543ba9a0bc5caf7))
+* pg_doorman binary delivery channel for in-place upgrades ([9fdd8f1](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/9fdd8f11a419521e47a994d713e914ed7a077159))
+* plugin image carries pg_doorman binaries and serves them over TLS ([1886606](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/188660672bc2d54f6a6523b2f4e849a71b79401f))
+* publish desired binary spec in the rendered config Secret ([739ecec](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/739ecec8672ed6d4fb29462570a97fc0a4c9ab75))
+* SIGUSR2 binary upgrade with successor adoption in the supervisor ([44488d8](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/44488d86bfae494cab757c07a84b54fd7a4a6efc))
+* wrapper runs pg_doorman from tmpfs and syncs the desired binary at startup ([a68b60a](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/a68b60a7c85a027ca9b8fcbfd3b59948e7002159))
+
+
+### Bug Fixes
+
+* bound the binary download, harden the delivery server, add an image-binary revert path ([c3bf718](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/c3bf718525fa0bb6357030087846b060deae81f7))
+* bounded post-cancel drain in waitUntilGone ([9f6e522](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/9f6e522ba3c86c8e4f9bbe7cf84e02168025e6b2))
+* cap RLIMIT_NOFILE so pg_doorman upgrade children start within the readiness window ([9ba03a5](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/9ba03a5806bd63e6686cc92200010df801cf96f2))
+* enforce a single supervised pooler and gate concurrent binary upgrades ([1dc31a9](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/1dc31a92ecd47e88bc4b8b31f68ca00387971d06))
+* harden upgrade handover against stale flags and validator adoption ([29cf53a](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/29cf53afe94222b95543528ded9768819577b7ad))
+* lint and doc comments in binary spec helpers ([c50806b](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/c50806b6cadf878e35e5f56e23f74f7547a9bbd0))
+* mirror binary-delivery SAN fix into the helm chart ([09e3211](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/09e32112c4890ace3b63d234bf44df74051cb17a))
+* nolint deprecated GetEventRecorderFor pending events API migration ([9c058fa](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/9c058fa8e834fb8505b15bee4a0348bd6dec1e26))
+* plugin serving cert covers the service FQDN used for binary delivery ([7f74614](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/7f7461487389da3709ccc6595f72d37c8fa2a92c))
+* retry the desired binary after a failed startup sync ([5ecaed5](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/5ecaed5936d3713a82ed307c2ed271600a37f31c))
+* retry the initial config on the image binary and derive the spec path from the config source ([4b0a6b7](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/4b0a6b75073eba8a8b2454f0370f17e0705696ad))
+
 ## [0.3.0](https://github.com/ermakov-oleg/cnpg-pg-doorman/compare/v0.2.0...v0.3.0) (2026-08-19)
 
 
