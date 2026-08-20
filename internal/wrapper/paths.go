@@ -23,6 +23,4 @@ const (
 	// ImageBinaryPath is the pg_doorman binary baked into the sidecar image,
 	// used as the seed copy and as the fallback when delivery is unavailable.
 	ImageBinaryPath = "/usr/bin/pg_doorman"
-	// BinarySpecSourcePath is the mounted binary.json from the rendered Secret.
-	BinarySpecSourcePath = "/etc/pg-doorman-config/binary.json"
 )
