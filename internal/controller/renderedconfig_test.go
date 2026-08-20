@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/ermakov-oleg/cnpg-pg-doorman/api/v1alpha1"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/wrapper"
 )
 
 const (
@@ -46,6 +47,12 @@ func cluster() *cnpgv1.Cluster {
 			Parameters: map[string]string{"configName": crName},
 		}}},
 	}
+}
+
+func clusterWithInPlaceUpgrades(value string) *cnpgv1.Cluster {
+	c := cluster()
+	c.Spec.Plugins[0].Parameters["inPlaceUpgrades"] = value
+	return c
 }
 
 func pgDoorman(secretName string) *v1alpha1.PgDoorman {
@@ -84,11 +91,16 @@ func labeledSecret(name, forCluster string) *corev1.Secret {
 
 func newReconciler(t *testing.T, objs ...client.Object) *RenderedConfigReconciler {
 	t.Helper()
+	return newReconcilerWithBinary(t, nil, objs...)
+}
+
+func newReconcilerWithBinary(t *testing.T, binary *wrapper.BinarySpec, objs ...client.Object) *RenderedConfigReconciler {
+	t.Helper()
 	t.Setenv("SIDECAR_IMAGE", "wrapper:test")
 	cl := fake.NewClientBuilder().WithScheme(newScheme(t)).
 		WithStatusSubresource(&v1alpha1.PgDoorman{}).
 		WithObjects(objs...).Build()
-	return &RenderedConfigReconciler{Client: cl}
+	return &RenderedConfigReconciler{Client: cl, Binary: binary}
 }
 
 func reconcile(t *testing.T, r *RenderedConfigReconciler) ctrl.Result {
@@ -131,6 +143,89 @@ func TestReconcileRendersConfigSecret(t *testing.T) {
 	}
 	if secret.Labels[ClusterLabel] != clusterName {
 		t.Errorf("rendered secret must carry the cluster label, got %v", secret.Labels)
+	}
+}
+
+func binarySpec() *wrapper.BinarySpec {
+	return &wrapper.BinarySpec{
+		URL:      "https://pg-doorman.cnpg-system.svc:9091",
+		SHA256:   map[string]string{"amd64": "aa"},
+		CABundle: "PEM",
+	}
+}
+
+func TestUpsertSecretPublishesBinarySpec(t *testing.T) {
+	binary := binarySpec()
+	r := newReconcilerWithBinary(t, binary, clusterWithInPlaceUpgrades("true"), pgDoorman(""))
+
+	reconcile(t, r)
+
+	secret := renderedSecret(t, r)
+	raw, ok := secret.Data[wrapper.BinarySpecKey]
+	if !ok {
+		t.Fatalf("rendered secret must carry %q, got keys %v", wrapper.BinarySpecKey, secret.Data)
+	}
+	got, err := wrapper.ParseBinarySpec(raw)
+	if err != nil {
+		t.Fatalf("ParseBinarySpec: %v", err)
+	}
+	if got.URL != binary.URL {
+		t.Errorf("URL = %q, want %q", got.URL, binary.URL)
+	}
+	if got.SHA256["amd64"] != binary.SHA256["amd64"] {
+		t.Errorf("SHA256[amd64] = %q, want %q", got.SHA256["amd64"], binary.SHA256["amd64"])
+	}
+	if got.CABundle != binary.CABundle {
+		t.Errorf("CABundle = %q, want %q", got.CABundle, binary.CABundle)
+	}
+}
+
+func TestUpsertSecretOmitsBinarySpecWhenDisabled(t *testing.T) {
+	r := newReconciler(t, cluster(), pgDoorman(""))
+
+	reconcile(t, r)
+
+	secret := renderedSecret(t, r)
+	if _, ok := secret.Data[wrapper.BinarySpecKey]; ok {
+		t.Errorf("rendered secret must not carry %q when Binary is disabled, got keys %v",
+			wrapper.BinarySpecKey, secret.Data)
+	}
+}
+
+func TestUpsertSecretOmitsBinarySpecWhenNotOptedIn(t *testing.T) {
+	// In-place upgrades are opt-in per cluster: a configured Binary alone must
+	// not reach the wrappers.
+	r := newReconcilerWithBinary(t, binarySpec(), cluster(), pgDoorman(""))
+
+	reconcile(t, r)
+
+	secret := renderedSecret(t, r)
+	if _, ok := secret.Data[wrapper.BinarySpecKey]; ok {
+		t.Errorf("rendered secret must not carry %q without inPlaceUpgrades=true, got keys %v",
+			wrapper.BinarySpecKey, secret.Data)
+	}
+}
+
+func TestUpsertSecretDropsBinarySpecOnOptOut(t *testing.T) {
+	r := newReconcilerWithBinary(t, binarySpec(), clusterWithInPlaceUpgrades("true"), pgDoorman(""))
+
+	reconcile(t, r)
+	if _, ok := renderedSecret(t, r).Data[wrapper.BinarySpecKey]; !ok {
+		t.Fatalf("rendered secret must carry %q while opted in", wrapper.BinarySpecKey)
+	}
+
+	var c cnpgv1.Cluster
+	if err := r.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: clusterName}, &c); err != nil {
+		t.Fatal(err)
+	}
+	delete(c.Spec.Plugins[0].Parameters, "inPlaceUpgrades")
+	if err := r.Update(context.Background(), &c); err != nil {
+		t.Fatal(err)
+	}
+
+	reconcile(t, r)
+	if _, ok := renderedSecret(t, r).Data[wrapper.BinarySpecKey]; ok {
+		t.Errorf("rendered secret must drop the stale %q after opting out", wrapper.BinarySpecKey)
 	}
 }
 

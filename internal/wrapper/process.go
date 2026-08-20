@@ -15,8 +15,10 @@ import (
 )
 
 const (
-	// PgDoormanBinary is the pg_doorman path inside the sidecar image.
-	PgDoormanBinary        = "/usr/bin/pg_doorman"
+	// PgDoormanBinary is the runtime pg_doorman path. It lives on tmpfs (the
+	// image copy is seeded/synced by BinarySyncer): the upstream binary
+	// upgrade re-executes argv[0], so the path must be replaceable.
+	PgDoormanBinary        = RuntimeBinaryPath
 	initialBackoff         = 1 * time.Second
 	maxBackoff             = 30 * time.Second
 	backoffMultiplier      = 2
