@@ -16,11 +16,11 @@ import (
 	"google.golang.org/grpc"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -173,8 +173,11 @@ func NewCmd() *cobra.Command {
 		}
 
 		if err := (&controller.RenderedConfigReconciler{
-			Client:   mgr.GetClient(),
-			Recorder: mgr.GetEventRecorderFor("pg-doorman-render"),
+			Client: mgr.GetClient(),
+			// Migrating to GetEventRecorder means switching the whole event
+			// path to events.EventRecorder (different Eventf contract) —
+			// tracked separately; controller-runtime itself nolints this.
+			Recorder: mgr.GetEventRecorderFor("pg-doorman-render"), //nolint:staticcheck
 			Binary:   binarySpec,
 		}).SetupWithManager(mgr); err != nil {
 			slogError(ctx, err, "unable to set up rendered config controller")
