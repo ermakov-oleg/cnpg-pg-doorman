@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.26@sha256:0d1d3a794be25f809dd2cb3160d8c73276c4056a9f8242a138e908ddeee7b6b6 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26@sha256:45a5f7a810238aabcbad211d70b9ae082022d96f7c7259e94041ad1b933575ac AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
@@ -14,7 +14,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -o /plugi
 FROM --platform=linux/amd64 ghcr.io/ozontech/pg_doorman:v3.11.0@sha256:b4c32c60e4267bbfe5ddd138c53a16e9f2e143fc64d7b3fae879b711d0db8578 AS doorman-amd64
 FROM --platform=linux/arm64 ghcr.io/ozontech/pg_doorman:v3.11.0@sha256:b4c32c60e4267bbfe5ddd138c53a16e9f2e143fc64d7b3fae879b711d0db8578 AS doorman-arm64
 
-FROM --platform=$BUILDPLATFORM golang:1.26@sha256:0d1d3a794be25f809dd2cb3160d8c73276c4056a9f8242a138e908ddeee7b6b6 AS binaries
+FROM --platform=$BUILDPLATFORM golang:1.26@sha256:45a5f7a810238aabcbad211d70b9ae082022d96f7c7259e94041ad1b933575ac AS binaries
 # E2E_BINARY_MARKER appends bytes to produce a content-distinct binary of the
 # same version: e2e exercises the delivery/upgrade machinery without needing
 # a second upstream release with a compatible config schema.
