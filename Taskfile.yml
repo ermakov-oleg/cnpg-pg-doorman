@@ -7,6 +7,7 @@ vars:
   E2E_KUBERNETES_VERSION: v1.36.1
   KIND_CLUSTER_NAME: pg-doorman-e2e
   PLUGIN_IMAGE: pg-doorman-plugin:testing
+  PLUGIN_NEXT_IMAGE: pg-doorman-plugin:testing-next
   WRAPPER_IMAGE: pg-doorman-wrapper:testing
   # renovate: datasource=github-releases depName=cert-manager/cert-manager
   CERT_MANAGER_VERSION: v1.21.1
@@ -40,6 +41,11 @@ tasks:
     cmds:
       - docker build -t {{.PLUGIN_IMAGE}} -f Dockerfile .
 
+  build-plugin-next-image:
+    desc: Build plugin image serving a content-distinct pg_doorman (e2e upgrade scenario)
+    cmds:
+      - docker build --build-arg E2E_BINARY_MARKER=e2e-upgrade-marker -t {{.PLUGIN_NEXT_IMAGE}} -f Dockerfile .
+
   build-wrapper-image:
     desc: Build wrapper sidecar Docker image
     cmds:
@@ -49,6 +55,7 @@ tasks:
     desc: Build all Docker images
     deps:
       - build-plugin-image
+      - build-plugin-next-image
       - build-wrapper-image
 
   start-kind:
@@ -66,6 +73,7 @@ tasks:
       - start-kind
     cmds:
       - kind load docker-image {{.PLUGIN_IMAGE}} --name {{.KIND_CLUSTER_NAME}}
+      - kind load docker-image {{.PLUGIN_NEXT_IMAGE}} --name {{.KIND_CLUSTER_NAME}}
       - kind load docker-image {{.WRAPPER_IMAGE}} --name {{.KIND_CLUSTER_NAME}}
 
   install-cert-manager:

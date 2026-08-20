@@ -9,9 +9,11 @@ import (
 	"time"
 )
 
-// Upgrader triggers the in-place pg_doorman binary upgrade.
+// Upgrader triggers the in-place pg_doorman binary upgrade and reports whether
+// a previously triggered one is still running.
 type Upgrader interface {
 	Upgrade() error
+	UpgradeInFlight() bool
 }
 
 // binaryCandidateSuffix keeps the not-yet-validated download away from the
@@ -95,6 +97,13 @@ func (w *BinaryWatcher) check(ctx context.Context) {
 	}
 
 	BinaryStale.Set(1)
+	if w.process.UpgradeInFlight() {
+		// lastSpec is left alone so the next tick retries: swapping argv[0] now
+		// would hand the in-flight successor a binary validated for nothing.
+		w.logger.Info("binary upgrade already in flight, deferring")
+		return
+	}
+
 	candidate := w.runtimePath + binaryCandidateSuffix
 	if err := w.syncer.Download(ctx, spec, desired, candidate); err != nil {
 		w.logger.Error("binary download failed, will retry", "error", err)

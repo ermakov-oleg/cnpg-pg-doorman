@@ -21,6 +21,15 @@ import (
 // DefaultDir is where the plugin image carries per-arch pg_doorman binaries.
 const DefaultDir = "/binaries"
 
+const (
+	readTimeout = 30 * time.Second
+	// writeTimeout is generous on purpose: the ~11MB binary may be pulled over a
+	// slow or congested link, and a cut-off download costs a whole retry cycle.
+	writeTimeout   = 5 * time.Minute
+	idleTimeout    = 60 * time.Second
+	maxHeaderBytes = 16 << 10
+)
+
 // LoadManifest hashes every <dir>/<arch>/pg_doorman. A missing dir returns
 // nil, nil: binary delivery is simply disabled (e.g. ad-hoc dev builds).
 func LoadManifest(dir string) (map[string]string, error) {
@@ -79,6 +88,10 @@ func (s *Server) Start(ctx context.Context) error {
 		Addr:              s.Addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
+		MaxHeaderBytes:    maxHeaderBytes,
 		TLSConfig: &tls.Config{
 			MinVersion: tls.VersionTLS13,
 			// Reload per handshake: cert-manager rotates the serving pair.

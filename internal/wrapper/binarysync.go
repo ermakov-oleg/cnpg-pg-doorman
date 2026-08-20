@@ -15,7 +15,17 @@ import (
 	"time"
 )
 
-const downloadTimeout = 2 * time.Minute
+const (
+	downloadTimeout = 2 * time.Minute
+	// idleConnTimeout bounds how long an unused connection (and its goroutines)
+	// survives: every download builds its own transport from the spec CA bundle.
+	idleConnTimeout = 30 * time.Second
+)
+
+// maxBinaryBytes caps what a download may write into the tmpfs runtime dir:
+// pg_doorman is ~11MB, so anything near this size is a hostile or broken
+// endpoint, not a binary. A var so tests can shrink it.
+var maxBinaryBytes int64 = 256 << 20
 
 // BinarySyncer materializes the desired pg_doorman binary at the runtime
 // path the wrapper executes. Sources, in order of preference: the already
@@ -38,10 +48,15 @@ func NewBinarySyncer(specPath, imagePath, runtimePath, arch string, logger *slog
 	}
 }
 
-// EnsureAtStartup installs the desired binary before pg_doorman starts and
-// returns the binary.json bytes it acted on (nil when absent). Failures to
-// download degrade to the image binary: serving traffic on the baked-in
-// version beats crash-looping the pooler.
+// EnsureAtStartup installs the desired binary before pg_doorman starts.
+// Failures to download degrade to the image binary: serving traffic on the
+// baked-in version beats crash-looping the pooler.
+//
+// The returned bytes are the BinaryWatcher seed: the binary.json contents only
+// when the desired state was reached, nil when startup ended on the fallback
+// binary. A nil seed makes the watcher treat the mounted spec as new on its
+// first tick and retry it, instead of leaving the pod stale until the next
+// plugin release changes the file.
 func (s *BinarySyncer) EnsureAtStartup(ctx context.Context) ([]byte, error) {
 	data, err := os.ReadFile(s.specPath)
 	if err != nil {
@@ -80,11 +95,28 @@ func (s *BinarySyncer) EnsureAtStartup(ctx context.Context) ([]byte, error) {
 	if err := s.Download(ctx, spec, desired, s.runtimePath); err != nil {
 		s.logger.Error("binary download failed, falling back to image binary", "error", err)
 		BinaryStale.Set(1)
-		return data, s.installFromImage("")
+		return nil, s.installFromImage("")
 	}
 	s.logger.Info("desired pg_doorman binary installed before start", "sha256", desired)
 	BinaryStale.Set(0)
 	return data, nil
+}
+
+// RevertToImage puts the image binary back at the runtime path. It reports
+// whether anything changed: false means the runtime binary already is the image
+// one, so there is nothing left to fall back to.
+func (s *BinarySyncer) RevertToImage() (bool, error) {
+	imgSHA, err := FileSHA256(s.imagePath)
+	if err != nil {
+		return false, fmt.Errorf("hashing image binary: %w", err)
+	}
+	if cur, err := FileSHA256(s.runtimePath); err == nil && cur == imgSHA {
+		return false, nil
+	}
+	if err := s.installFromImage(""); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // installFromImage copies the image binary to the runtime path unless it is
@@ -115,6 +147,7 @@ func (s *BinarySyncer) Download(ctx context.Context, spec *BinarySpec, wantSHA, 
 	if err != nil {
 		return err
 	}
+	defer client.CloseIdleConnections()
 	ctx, cancel := context.WithTimeout(ctx, downloadTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, spec.URL+"/binaries/"+s.arch, nil)
@@ -128,6 +161,9 @@ func (s *BinarySyncer) Download(ctx context.Context, spec *BinarySpec, wantSHA, 
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("binary endpoint returned %s", resp.Status)
+	}
+	if resp.ContentLength > maxBinaryBytes {
+		return fmt.Errorf("binary endpoint declared %d bytes, over the %d byte limit", resp.ContentLength, maxBinaryBytes)
 	}
 
 	tmp, err := os.CreateTemp(filepath.Dir(destPath), ".pg_doorman-*")
@@ -145,8 +181,12 @@ func (s *BinarySyncer) Download(ctx context.Context, spec *BinarySpec, wantSHA, 
 	}()
 
 	h := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(tmp, h), resp.Body); err != nil {
+	written, err := io.Copy(io.MultiWriter(tmp, h), io.LimitReader(resp.Body, maxBinaryBytes+1))
+	if err != nil {
 		return err
+	}
+	if written > maxBinaryBytes {
+		return fmt.Errorf("binary exceeds the %d byte limit", maxBinaryBytes)
 	}
 	if got := hex.EncodeToString(h.Sum(nil)); got != wantSHA {
 		return fmt.Errorf("downloaded binary digest mismatch: got %s want %s", got, wantSHA)
@@ -172,7 +212,10 @@ func httpClientFor(spec *BinarySpec) (*http.Client, error) {
 		}
 		tlsCfg.RootCAs = pool
 	}
-	return &http.Client{Transport: &http.Transport{TLSClientConfig: tlsCfg}}, nil
+	return &http.Client{Transport: &http.Transport{
+		TLSClientConfig: tlsCfg,
+		IdleConnTimeout: idleConnTimeout,
+	}}, nil
 }
 
 func atomicInstall(destPath string, src io.Reader) error {

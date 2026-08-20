@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"syscall"
@@ -29,6 +30,7 @@ func main() {
 		Level: wrapper.ParseLogLevel(os.Getenv("LOG_LEVEL")),
 	}))
 	wrapper.SetChildSubreaper(logger)
+	wrapper.CapFileDescriptorLimit(logger)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
@@ -44,7 +46,8 @@ func main() {
 	proc := wrapper.NewProcess(wrapper.RuntimeConfigPath, logger)
 	fw := wrapper.NewFileWatcher(sourcePath, wrapper.RuntimeConfigPath, rawKeyPath, wrapper.ConvertedTLSKeyPath, proc, logger)
 
-	specSource := envOr("BINARY_SPEC_SOURCE", wrapper.BinarySpecSourcePath)
+	// binary.json ships in the same rendered Secret as the config.
+	specSource := filepath.Join(filepath.Dir(sourcePath), wrapper.BinarySpecKey)
 	syncer := wrapper.NewBinarySyncer(
 		specSource, wrapper.ImageBinaryPath, wrapper.RuntimeBinaryPath, runtime.GOARCH, logger)
 	appliedSpec, err := syncer.EnsureAtStartup(ctx)
@@ -53,9 +56,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := fw.ApplyInitial(ctx); err != nil {
-		// The Secret volume is mounted before the container starts, so this
-		// only fails on a genuinely broken rendered config.
+	appliedSpec, err = wrapper.ApplyInitialConfig(ctx, fw, syncer, appliedSpec, logger)
+	if err != nil {
+		// The Secret volume is mounted before the container starts, and the
+		// image binary has already been retried: the config is genuinely broken.
 		logger.Error("initial config apply failed", "error", err)
 		os.Exit(1)
 	}
