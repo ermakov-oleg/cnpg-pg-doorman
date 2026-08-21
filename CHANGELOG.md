@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/ermakov-oleg/cnpg-pg-doorman/compare/v0.4.1...v0.5.0) (2026-08-21)
+
+
+### Features
+
+* generate auth_query password Secret when passwordSecretRef is omitted ([b65b522](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/b65b52257a95e7ab5a963c83ae950f4f1f7a1c92))
+* generate auth_query password Secret when passwordSecretRef is omitted ([c9541db](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/c9541db49d151e33d5e99ffb0003b1a34f5094e8))
+
 ## [0.4.1](https://github.com/ermakov-oleg/cnpg-pg-doorman/compare/v0.4.0...v0.4.1) (2026-08-21)
 
 
