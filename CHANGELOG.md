@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/ermakov-oleg/cnpg-pg-doorman/compare/v0.4.0...v0.4.1) (2026-08-21)
+
+
+### Bug Fixes
+
+* add missing go.sum zip hash for k8s.io/streaming v0.36.4 ([d687320](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/d6873200acc6a4ac287c27deb12a9f9155d5aa54))
+* **deps:** update kubernetes monorepo to v0.36.4 ([0a984f6](https://github.com/ermakov-oleg/cnpg-pg-doorman/commit/0a984f66201bc654b1cfb57570a75aa97ca3785a))
+
 ## [0.4.0](https://github.com/ermakov-oleg/cnpg-pg-doorman/compare/v0.3.0...v0.4.0) (2026-08-20)
 
 
