@@ -11,6 +11,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	pgdoormanv1alpha1 "github.com/ermakov-oleg/cnpg-pg-doorman/api/v1alpha1"
+	"github.com/ermakov-oleg/cnpg-pg-doorman/internal/specs"
 )
 
 // e2eAdminPassword is provided via a Secret referenced from every fixture CR:
@@ -76,8 +77,23 @@ func newCluster(namespace, name, configName string) *cnpgv1.Cluster {
 			},
 			PostgresConfiguration: cnpgv1.PostgresConfiguration{
 				PgHBA: []string{
-					"host all doorman_auth 127.0.0.1/32 trust",
-					"host all doorman_auth ::1/128 trust",
+					"host all doorman_auth 127.0.0.1/32 scram-sha-256",
+					"host all doorman_auth ::1/128 scram-sha-256",
+				},
+			},
+			// The doorman_auth password comes from the Secret the plugin
+			// generates (no passwordSecretRef in the fixture CR), exercising
+			// the generation path end-to-end in every scenario.
+			Managed: &cnpgv1.ManagedConfiguration{
+				Roles: []cnpgv1.RoleConfiguration{
+					{
+						Name:    "doorman_auth",
+						Login:   true,
+						Inherit: ptr.To(false),
+						PasswordSecret: &cnpgv1.LocalObjectReference{
+							Name: specs.GeneratedAuthSecretName(name),
+						},
+					},
 				},
 			},
 			Bootstrap: &cnpgv1.BootstrapConfiguration{

@@ -64,7 +64,9 @@ type AuthQuerySpec struct {
 	Query string `json:"query,omitempty"`
 
 	// PasswordSecretRef references a Secret containing the auth user password.
-	// If not set, empty password is used.
+	// If not set, the plugin creates a kubernetes.io/basic-auth Secret named
+	// "<cluster>-doorman-auth" with a generated password and uses it; all
+	// pools omitting the ref must then use the same user.
 	// +optional
 	PasswordSecretRef *machineryapi.SecretKeySelector `json:"passwordSecretRef,omitempty"`
 

@@ -20,6 +20,7 @@ tasks:
     cmds:
       - controller-gen object paths=./api/...
       - controller-gen crd paths=./api/... output:crd:dir=kubernetes/crd
+      - cp kubernetes/crd/pg-doorman.cnpg.io_pgdoormen.yaml chart/crds/
 
   build:
     desc: Build all Go binaries
