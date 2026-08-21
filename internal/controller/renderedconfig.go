@@ -114,7 +114,23 @@ func (r *RenderedConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, r.setRendered(ctx, &pgDoorman, false, "InvalidPluginConfig", err.Error())
 	}
 
-	if err := r.validateSecretOwnership(ctx, &pgDoorman, cluster.Name); err != nil {
+	spec, generatedUser, err := specs.DefaultAuthSecretRefs(&pgDoorman.Spec)
+	if err != nil {
+		r.eventf(&pgDoorman, "InvalidSpec", "%v", err)
+		return ctrl.Result{}, r.setRendered(ctx, &pgDoorman, false, "InvalidSpec", err.Error())
+	}
+	if generatedUser != "" {
+		if err := r.ensureGeneratedAuthSecret(ctx, &cluster, generatedUser); err != nil {
+			r.eventf(&pgDoorman, "AuthSecretFailed", "%v", err)
+			logger.Error(err, "generated auth secret", "cluster", cluster.Name)
+			if statusErr := r.setRendered(ctx, &pgDoorman, false, "AuthSecretFailed", err.Error()); statusErr != nil {
+				return ctrl.Result{}, statusErr
+			}
+			return ctrl.Result{RequeueAfter: requeueAfter}, nil
+		}
+	}
+
+	if err := r.validateSecretOwnership(ctx, &pgDoorman, spec, cluster.Name); err != nil {
 		r.eventf(&pgDoorman, "SecretNotAllowed", "%v", err)
 		logger.Error(err, "refusing to render config", "cluster", cluster.Name)
 		if statusErr := r.setRendered(ctx, &pgDoorman, false, "SecretNotAllowed", err.Error()); statusErr != nil {
@@ -123,7 +139,7 @@ func (r *RenderedConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{RequeueAfter: requeueAfter}, nil
 	}
 
-	data, generatedAdmin, err := r.render(ctx, &pgDoorman, &cluster, cfg)
+	data, generatedAdmin, err := r.render(ctx, spec, pgDoorman.Namespace, &cluster, cfg)
 	if err != nil {
 		r.eventf(&pgDoorman, "RenderFailed", "%v", err)
 		logger.Error(err, "config render failed", "cluster", cluster.Name)
@@ -220,9 +236,10 @@ func (r *RenderedConfigReconciler) ensureFinalizer(
 func (r *RenderedConfigReconciler) validateSecretOwnership(
 	ctx context.Context,
 	pgDoorman *v1alpha1.PgDoorman,
+	spec *v1alpha1.PgDoormanSpec,
 	clusterName string,
 ) error {
-	for _, name := range specs.CollectSecretNames(&pgDoorman.Spec) {
+	for _, name := range specs.CollectSecretNames(spec) {
 		var secret corev1.Secret
 		if err := r.Get(ctx, types.NamespacedName{Namespace: pgDoorman.Namespace, Name: name}, &secret); err != nil {
 			if apierrs.IsNotFound(err) {
@@ -243,11 +260,12 @@ func (r *RenderedConfigReconciler) validateSecretOwnership(
 
 func (r *RenderedConfigReconciler) render(
 	ctx context.Context,
-	pgDoorman *v1alpha1.PgDoorman,
+	spec *v1alpha1.PgDoormanSpec,
+	namespace string,
 	cluster *cnpgv1.Cluster,
 	cfg *config.PluginConfiguration,
 ) (data []byte, generatedAdmin string, err error) {
-	passwords, err := credentials.ResolvePasswords(ctx, r.Client, pgDoorman.Namespace, &pgDoorman.Spec)
+	passwords, err := credentials.ResolvePasswords(ctx, r.Client, namespace, spec)
 	if err != nil {
 		return nil, "", err
 	}
@@ -258,7 +276,7 @@ func (r *RenderedConfigReconciler) render(
 	}
 	passwords = configgen.EnsureAdminPassword(passwords, generatedAdmin)
 
-	data, err = configgen.Generate(&pgDoorman.Spec, cfg.PoolerPort, cfg.MetricsPort, passwords, &configgen.TLSFiles{
+	data, err = configgen.Generate(spec, cfg.PoolerPort, cfg.MetricsPort, passwords, &configgen.TLSFiles{
 		Certificate: wrapper.TLSCertPath,
 		PrivateKey:  wrapper.ConvertedTLSKeyPath,
 	})
@@ -269,6 +287,67 @@ func (r *RenderedConfigReconciler) render(
 		return nil, "", err
 	}
 	return data, generatedAdmin, nil
+}
+
+// ensureGeneratedAuthSecret creates the per-cluster auth_query password
+// Secret when no explicit passwordSecretRef is set. An existing Secret is
+// never overwritten: labeled means user-provided (BYO password), unlabeled is
+// invisible to the label-scoped informer and surfaces as AlreadyExists on
+// create — reported instead of clobbering a foreign Secret.
+func (r *RenderedConfigReconciler) ensureGeneratedAuthSecret(
+	ctx context.Context,
+	cluster *cnpgv1.Cluster,
+	user string,
+) error {
+	name := specs.GeneratedAuthSecretName(cluster.Name)
+	var existing corev1.Secret
+	err := r.Get(ctx, types.NamespacedName{Namespace: cluster.Namespace, Name: name}, &existing)
+	if err == nil {
+		return nil
+	}
+	if !apierrs.IsNotFound(err) {
+		return err
+	}
+
+	password, err := randomPassword()
+	if err != nil {
+		return err
+	}
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: cluster.Namespace,
+			Name:      name,
+			Labels: map[string]string{
+				ClusterLabel: cluster.Name,
+			},
+		},
+		Type: corev1.SecretTypeBasicAuth,
+		Data: map[string][]byte{
+			"username": []byte(user),
+			"password": []byte(password),
+		},
+	}
+	if err := ctrl.SetControllerReference(cluster, secret, r.Scheme()); err != nil {
+		return err
+	}
+	log.FromContext(ctx).Info("creating generated auth secret", "name", name, "namespace", cluster.Namespace)
+	if err := r.Create(ctx, secret); err != nil {
+		if apierrs.IsAlreadyExists(err) {
+			return fmt.Errorf(
+				"secret %q already exists but is not labeled %s=%s; label it or remove it",
+				name, ClusterLabel, cluster.Name)
+		}
+		return err
+	}
+	return nil
+}
+
+func randomPassword() (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
 }
 
 // adminPasswordFallback returns a random admin password, stable across
@@ -290,11 +369,7 @@ func (r *RenderedConfigReconciler) adminPasswordFallback(
 		return "", err
 	}
 
-	buf := make([]byte, 16)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf), nil
+	return randomPassword()
 }
 
 func (r *RenderedConfigReconciler) upsertSecret(
@@ -397,7 +472,13 @@ func (r *RenderedConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 		var reqs []ctrl.Request
 		for i := range list.Items {
-			for _, name := range specs.CollectSecretNames(&list.Items[i].Spec) {
+			// Generated-secret events must re-render too; a conflicting spec
+			// falls back to the raw refs.
+			spec := &list.Items[i].Spec
+			if normalized, _, err := specs.DefaultAuthSecretRefs(spec); err == nil {
+				spec = normalized
+			}
+			for _, name := range specs.CollectSecretNames(spec) {
 				if name == obj.GetName() {
 					reqs = append(reqs, ctrl.Request{NamespacedName: types.NamespacedName{
 						Namespace: list.Items[i].Namespace, Name: list.Items[i].Name,

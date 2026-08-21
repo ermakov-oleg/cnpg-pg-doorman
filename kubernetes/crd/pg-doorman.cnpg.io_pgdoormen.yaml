@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   name: pgdoormen.pg-doorman.cnpg.io
 spec:
   group: pg-doorman.cnpg.io
@@ -149,7 +149,9 @@ spec:
                         passwordSecretRef:
                           description: |-
                             PasswordSecretRef references a Secret containing the auth user password.
-                            If not set, empty password is used.
+                            If not set, the plugin creates a kubernetes.io/basic-auth Secret named
+                            "<cluster>-doorman-auth" with a generated password and uses it; all
+                            pools omitting the ref must then use the same user.
                           properties:
                             key:
                               description: The key to select

@@ -11,10 +11,23 @@ spec:
     kind: PgDoorman
     listKind: PgDoormanList
     plural: pgdoormen
+    shortNames:
+    - pgd
     singular: pgdoorman
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.pools
+      name: Pools
+      priority: 1
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Rendered")].status
+      name: Rendered
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: PgDoorman is the Schema for the pgdoormans API.
@@ -39,18 +52,31 @@ spec:
           spec:
             description: PgDoormanSpec defines the desired state of PgDoorman.
             properties:
+              clusterRef:
+                description: |-
+                  ClusterRef names the CNPG Cluster this configuration belongs to. It is
+                  the source of truth for the Cluster<->PgDoorman relation (the
+                  configName plugin parameter is only discovery), enabling ownership,
+                  status aggregation and admission validation. Immutable.
+                properties:
+                  name:
+                    description: Name of the referent.
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: clusterRef is immutable
+                  rule: self.name == oldSelf.name
               general:
                 description: General settings for pg_doorman.
                 properties:
-                  adminPassword:
-                    description: |-
-                      AdminPassword is the admin password (default: "change-me").
-                      Ignored if AdminPasswordSecretRef is set.
-                    type: string
                   adminPasswordSecretRef:
                     description: |-
                       AdminPasswordSecretRef references a Secret containing the admin password.
-                      Takes precedence over AdminPassword.
+                      There is deliberately no plaintext alternative: a password in the CR
+                      would land in etcd, GitOps repos and manifest backups. When unset, the
+                      wrapper generates a random per-pod password.
                     properties:
                       key:
                         description: The key to select
@@ -63,38 +89,45 @@ spec:
                     - name
                     type: object
                   adminUsername:
+                    default: admin
                     description: 'AdminUsername is the admin user (default: "admin").'
                     type: string
                   connectTimeout:
+                    default: 3s
                     description: |-
                       ConnectTimeout is the connection timeout (default: "3s").
                       A plain number is milliseconds; suffixes ms/s/m/h/d are supported.
                     pattern: ^[0-9]+(ms|s|m|h|d)?$
                     type: string
                   idleTimeout:
+                    default: 5m
                     description: |-
                       IdleTimeout is the idle connection timeout (default: "5m").
                       A plain number is milliseconds; suffixes ms/s/m/h/d are supported.
                     pattern: ^[0-9]+(ms|s|m|h|d)?$
                     type: string
                   maxConnections:
+                    default: 8192
                     description: 'MaxConnections is the maximum number of connections
                       (default: 8192).'
                     minimum: 1
                     type: integer
                   serverLifetime:
+                    default: 5m
                     description: |-
                       ServerLifetime is the server connection lifetime (default: "5m").
                       A plain number is milliseconds; suffixes ms/s/m/h/d are supported.
                     pattern: ^[0-9]+(ms|s|m|h|d)?$
                     type: string
                   shutdownTimeout:
+                    default: 10s
                     description: |-
                       ShutdownTimeout is the graceful shutdown timeout (default: "10s").
                       A plain number is milliseconds; suffixes ms/s/m/h/d are supported.
                     pattern: ^[0-9]+(ms|s|m|h|d)?$
                     type: string
                   workerThreads:
+                    default: 4
                     description: 'WorkerThreads is the number of worker threads (default:
                       4).'
                     minimum: 1
@@ -109,13 +142,16 @@ spec:
                       description: AuthQuery defines auth_query-based authentication.
                       properties:
                         database:
+                          default: postgres
                           description: 'Database is the database for auth queries
                             (default: "postgres").'
                           type: string
                         passwordSecretRef:
                           description: |-
                             PasswordSecretRef references a Secret containing the auth user password.
-                            If not set, empty password is used.
+                            If not set, the plugin creates a kubernetes.io/basic-auth Secret named
+                            "<cluster>-doorman-auth" with a generated password and uses it; all
+                            pools omitting the ref must then use the same user.
                           properties:
                             key:
                               description: The key to select
@@ -128,12 +164,14 @@ spec:
                           - name
                           type: object
                         poolSize:
+                          default: 2
                           description: |-
                             PoolSize is the number of executor connections running auth queries (default: 2).
                             Maps to auth_query.workers.
                           minimum: 1
                           type: integer
                         query:
+                          default: SELECT * FROM public.doorman_auth_query($1)
                           description: 'Query is the SQL query (default: "SELECT *
                             FROM public.doorman_auth_query($1)").'
                           type: string
@@ -145,12 +183,14 @@ spec:
                       - user
                       type: object
                     defaultPoolSize:
+                      default: 40
                       description: |-
                         DefaultPoolSize is the data pool size per auth_query user (default: 40).
                         Maps to auth_query.pool_size.
                       minimum: 1
                       type: integer
                     poolMode:
+                      default: transaction
                       description: 'PoolMode is the pooling mode (default: "transaction").'
                       enum:
                       - session
@@ -176,6 +216,7 @@ spec:
                             - name
                             type: object
                           poolSize:
+                            default: 20
                             description: 'PoolSize is the pool size for this user
                               (default: 20).'
                             minimum: 1
@@ -200,15 +241,86 @@ spec:
                 description: Prometheus metrics configuration.
                 properties:
                   enabled:
+                    default: true
                     description: 'Enabled controls whether Prometheus metrics are
                       enabled (default: true).'
                     type: boolean
                 type: object
             required:
+            - clusterRef
             - pools
             type: object
           status:
             description: PgDoormanStatus defines the observed state of PgDoorman.
+            properties:
+              conditions:
+                description: |-
+                  Conditions describe the rendering state. The Rendered condition is True
+                  when the current generation was rendered into the config Secret.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the last spec generation rendered into the
+                  per-cluster config Secret.
+                format: int64
+                type: integer
             type: object
         required:
         - metadata

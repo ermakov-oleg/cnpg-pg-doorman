@@ -14,9 +14,8 @@ spec:
 
   managed:
     roles:
-      # CNPG keeps the doorman_auth password in sync with the Secret,
-      # including rotation. The same Secret is referenced by
-      # authQuery.passwordSecretRef in the PgDoorman resource.
+      # CNPG keeps the doorman_auth password in sync with the Secret the
+      # plugin generates (or your own), including rotation.
       - name: doorman_auth
         login: true
         inherit: false
