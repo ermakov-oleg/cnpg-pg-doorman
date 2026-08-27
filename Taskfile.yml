@@ -4,7 +4,7 @@ vars:
   # renovate: datasource=github-releases depName=kubernetes-sigs/kind
   KIND_VERSION: v0.32.0
   # renovate: datasource=docker depName=kindest/node
-  E2E_KUBERNETES_VERSION: v1.36.1
+  E2E_KUBERNETES_VERSION: v1.37.0
   KIND_CLUSTER_NAME: pg-doorman-e2e
   PLUGIN_IMAGE: pg-doorman-plugin:testing
   PLUGIN_NEXT_IMAGE: pg-doorman-plugin:testing-next
